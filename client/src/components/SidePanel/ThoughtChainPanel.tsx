@@ -5,7 +5,7 @@ import { ThoughtChain, CodeHighlighter } from '@ant-design/x';
 import { CheckCircleTwoTone, LoadingOutlined, CloseCircleTwoTone, CodeOutlined } from '@ant-design/icons';
 import { actionDelimiter, actionDomainSeparator, Constants } from '@aipyq/data-provider';
 import { useChatContext } from '~/Providers';
-import type { MessageToolCalls, ThoughtChainData, MessageContentItem } from '~/utils/parseDatServerResponse';
+import type { MessageToolCalls, MessageContentItem } from '~/utils/parseDatServerResponse';
 import { mapAttachments } from '~/utils/map';
 import { useLocalize } from '~/hooks';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
@@ -23,118 +23,6 @@ interface ThoughtChainPanelProps {
   onRenderChange: (shouldRender: boolean) => void;
 }
 
-/**
- * Dat-Server 思维链内容组件 - 显示推理过程
- */
-function DatServerThoughtChainContent({ data }: { data: ThoughtChainData }) {
-  const items = useMemo(() => {
-    const result: ExtendedThoughtChainItemType[] = [];
-
-    // 1. 意图分类
-    if (data.intentClassification) {
-      const intent = data.intentClassification;
-      result.push({
-        key: 'intent',
-        title: '意图分类',
-        description: intent.intent || '',
-        status: 'success',
-        collapsible: true,
-        content: (
-          <div className="space-y-2 text-sm">
-            {intent.rephrased_question && (
-              <div>
-                <span className="font-medium">重述问题:</span> {intent.rephrased_question}
-              </div>
-            )}
-            {intent.reasoning && (
-              <div>
-                <span className="font-medium">推理:</span> {intent.reasoning}
-              </div>
-            )}
-          </div>
-        ),
-      });
-    }
-
-    // 2. SQL 生成推理
-    if (data.sqlGenerationReasoning) {
-      result.push({
-        key: 'reasoning',
-        title: 'SQL 生成推理',
-        status: 'success',
-        collapsible: true,
-        content: (
-          <div className="markdown prose prose-sm dark:prose-invert max-w-none">
-            <MarkdownLite content={data.sqlGenerationReasoning} />
-          </div>
-        ),
-      });
-    }
-
-    // 3. SQL 生成
-    if (data.sqlGenerate) {
-      result.push({
-        key: 'generate',
-        title: 'SQL 生成',
-        status: 'success',
-        collapsible: true,
-        content: <CodeHighlighter lang="sql">{data.sqlGenerate}</CodeHighlighter>,
-      });
-    }
-
-    // 4. 语义 SQL 转换
-    if (data.semanticToSql) {
-      const isError =
-        typeof data.semanticToSql === 'string' &&
-        data.semanticToSql.toLowerCase().includes('error');
-      result.push({
-        key: 'semantic',
-        title: '语义 SQL 转换',
-        status: isError ? 'error' : 'success',
-        collapsible: true,
-        content: isError ? (
-          <div className="text-sm text-red-500">{data.semanticToSql}</div>
-        ) : (
-          <CodeHighlighter lang="sql">{data.semanticToSql}</CodeHighlighter>
-        ),
-      });
-    }
-
-    // 5. SQL 执行结果
-    if (data.sqlExecute) {
-      result.push({
-        key: 'execute',
-        title: 'SQL 执行结果',
-        status: 'success',
-        collapsible: true,
-        content: <SqlExecuteResult content={data.sqlExecute} />,
-      });
-    }
-
-    // 6. 异常信息
-    if (data.exception) {
-      result.push({
-        key: 'exception',
-        title: '异常信息',
-        description: data.exception.message || '',
-        status: 'error',
-      });
-    }
-
-    return result;
-  }, [data]);
-
-  if (items.length === 0) {
-    return null;
-  }
-
-  return (
-    <div className="mt-2 border-t border-border-light pt-2">
-      <div className="mb-2 text-xs font-medium text-text-primary">推理过程</div>
-      <ThoughtChain items={items} defaultExpandedKeys={[]} />
-    </div>
-  );
-}
 
 /**
  * SQL 执行结果组件
@@ -247,14 +135,12 @@ function ToolCallDetailContent({
   output,
   domain,
   function_name,
-  thoughtChain,
   localize,
 }: {
   args: string;
   output?: string | null;
   domain: string | null;
   function_name: string;
-  thoughtChain: ThoughtChainData | null;
   // 使用宽松类型避免与 useLocalize 的类型签名不兼容
   localize: any;
 }) {
@@ -283,9 +169,6 @@ function ToolCallDetailContent({
           <OptimizedCodeBlock text={output!} />
         </div>
       )}
-
-      {/* dat-server 思维链内容 */}
-      {thoughtChain && <DatServerThoughtChainContent data={thoughtChain} />}
     </div>
   );
 }
@@ -296,7 +179,6 @@ function ToolCallDetailContent({
  */
 function SidePanelToolCallItem({
   toolCall,
-  thoughtChain,
   isSubmitting,
   itemKey,
 }: {
@@ -309,7 +191,6 @@ function SidePanelToolCallItem({
     auth?: string;
     expires_at?: number;
   };
-  thoughtChain: ThoughtChainData | null;
   attachments?: any[];
   isSubmitting: boolean;
   itemKey: string;
@@ -400,7 +281,7 @@ function SidePanelToolCallItem({
   };
 
   // 是否有详情内容
-  const hasDetails = args || hasOutput || thoughtChain;
+  const hasDetails = args || hasOutput;
 
   // 构建 ThoughtChain 项目 - 显式指定类型避免类型错误
   const status = getStatus();
@@ -423,7 +304,6 @@ function SidePanelToolCallItem({
           output={toolCall.output}
           domain={domain}
           function_name={function_name}
-          thoughtChain={thoughtChain}
           localize={localize}
         />
       ) : undefined,
@@ -559,7 +439,6 @@ const ThoughtChainPanel = memo(function ThoughtChainPanel({
                     key={tcKey}
                     itemKey={tcKey}
                     toolCall={item.toolCall.toolCall}
-                    thoughtChain={item.toolCall.thoughtChain}
                     attachments={tcAttachments}
                     isSubmitting={isSubmitting}
                   />
