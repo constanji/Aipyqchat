@@ -29,7 +29,9 @@ services:
       - type: bind
         source: ./Aipyq.yaml
         target: /app/Aipyq.yaml
-      - ./specs:/app/specs
+      # specs 已包含在镜像中，不需要 volume mount
+      # - ./specs:/app/specs
+      # images 是运行时数据（用户上传），保留 volume mount
       - ./images:/app/client/public/images
       - ./uploads:/app/uploads
       - ./logs:/app/api/logs
