@@ -118,7 +118,7 @@ function ChatView({ index = 0 }: { index?: number }) {
                     )}
                   >
                     <ChatForm index={index} />
-                    {isLandingPage ? <ConversationStarters /> : <div className="2"><Footer className="relative left-0 right-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-xs text-text-primary sm:flex md:px-[60px]" /></div>}
+                    {isLandingPage ? <ConversationStarters /> : <div className="2"><Footer className="relative left-0 right-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-sm text-text-primary sm:flex md:px-[60px]" /></div>}
                   </div>
                 </div>
                 {isLandingPage && <Footer />}

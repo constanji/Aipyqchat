@@ -49,7 +49,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
       lines.forEach((line, lineIndex) => {
         if (line) {
           parts.push(
-            <span key={`text-${keyIndex++}`} className="text-xs text-gray-600 dark:text-gray-400">
+            <span key={`text-${keyIndex++}`} className="text-sm text-gray-600 dark:text-gray-400">
               {line}
             </span>
           );
@@ -77,7 +77,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
           href={linkUrl}
           target="_blank"
           rel="noreferrer"
-          className="text-xs text-green-500"
+          className="text-sm text-green-500"
         >
           {linkText}
         </a>
@@ -99,7 +99,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
         <>
           {lines.map((line, index) => (
             <React.Fragment key={`line-${index}`}>
-              <span className="text-xs text-gray-600 dark:text-gray-400">{line}</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">{line}</span>
               {index < lines.length - 1 && <br />}
             </React.Fragment>
           ))}
@@ -115,7 +115,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
     const mainContentParts = (
       typeof startupConfig?.customFooter === 'string'
         ? startupConfig.customFooter
-        : 'AI 每日朋友圈  \n[浙ICP备2021031999号-3](https://beian.miit.gov.cn/)  Copyright © 2025-2026 Powered By [aipyq.com](https://www.aipyq.com)'
+        : 'AI 每日朋友圈  \n[浙ICP备2021031999号-3](https://beian.miit.gov.cn/)  Copyright © 2026 Powered By [aipyq.com](https://www.aipyq.com)'
     ).split('|');
 
     const parts = mainContentParts.map((part) => part.trim()).filter(Boolean);
@@ -125,14 +125,14 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
     }
 
     return (
-      <div className="text-xs text-gray-600 dark:text-gray-400 text-center">
+      <div className="text-sm text-gray-600 dark:text-gray-400 text-center">
         {parts.map((part, index) => (
           <React.Fragment key={`custom-footer-part-${index}`}>
             {index === 0 && (
               <img
                 src="/assets/logo.svg"
                 alt="Logo"
-                className="inline-block h-3 w-3 mr-1 align-text-bottom -mt-0.5"
+                className="inline-block h-3.5 w-3.5 mr-1 align-middle relative top-[-1px]"
               />
             )}
             {parseMarkdownLinks(part)}
