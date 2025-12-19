@@ -33,7 +33,7 @@ mcpServers:
     timeout: 120000
     customUserVars: {}
 interface:
-  customWelcome: 欢迎来到 每日AI朋友圈！祝您体验愉快。
+  customWelcome: 欢迎来到每日AI朋友圈
   defaultEndpoint: deepseek
   defaultModel: deepseek-chat
   fileSearch: true
