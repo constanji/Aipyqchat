@@ -45,7 +45,8 @@
     "build:client": "cd client && npm run build",
     "build:client-package": "cd packages/client && npm run build",
     "build:packages": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package",
-    "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && cd client && npm run build",
+    "build:agents": "cd agents-Aipyq && npm install && npm run build:dev && cd ..",
+    "frontend": "npm run build:data-provider && npm run build:data-schemas && npm run build:api && npm run build:client-package && npm run build:agents && cd client && npm run build",
     "frontend:ci": "npm run build:data-provider && npm run build:client-package && cd client && npm run build:ci",
     "frontend:dev": "cd client && npm run dev",
     "test:client": "cd client && npm run test:ci",
@@ -131,6 +132,9 @@
       "micromark-extension-math": {
         "katex": "^0.16.21"
       }
+    },
+    "@browserbasehq/stagehand": {
+      "openai": "5.8.2"
     }
   },
   "nodemonConfig": {
