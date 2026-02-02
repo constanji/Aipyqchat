@@ -45,21 +45,21 @@ class VectorDBService {
     if (!envHost && !envPort && !envDatabase && !envUser && !envPassword) {
       // 只有在所有环境变量都未设置时才使用默认值
       if (!isRunningInDocker()) {
-        // 在本地开发环境：使用 localhost 和映射的端口
+        // 在本地开发环境：使用 localhost 和映射的端口（与 deploy-compose.yml vectordb 一致）
         defaultHost = 'localhost';
         defaultPort = 5234; // 本地开发使用映射端口 5234
-        defaultDatabase = 'Chizhou';
-        defaultUser = 'Chizhou';
-        defaultPassword = 'Chizhou';
-        logger.debug('[VectorDBService] 检测到本地开发环境，使用默认配置: localhost:5234/Chizhou');
+        defaultDatabase = 'Aipyq';
+        defaultUser = 'Aipyq';
+        defaultPassword = 'Aipyq';
+        logger.debug('[VectorDBService] 检测到本地开发环境，使用默认配置: localhost:5234/Aipyq');
       } else {
-        // 在 Docker 容器内：使用容器网络内的主机名
+        // 在 Docker 容器内：使用容器网络内的主机名（与 deploy-compose.yml vectordb 一致）
         defaultHost = 'vectordb';
         defaultPort = 5432;
-        defaultDatabase = 'Chizhou';
-        defaultUser = 'Chizhou';
-        defaultPassword = 'Chizhou';
-        logger.debug('[VectorDBService] 检测到 Docker 容器环境，使用默认配置: vectordb:5432/Chizhou');
+        defaultDatabase = 'Aipyq';
+        defaultUser = 'Aipyq';
+        defaultPassword = 'Aipyq';
+        logger.debug('[VectorDBService] 检测到 Docker 容器环境，使用默认配置: vectordb:5432/Aipyq');
       }
     }
     

@@ -9,12 +9,13 @@ services:
       - 3080:3080
     depends_on:
       - mongodb
+      - vectordb
       # - rag_api  # 如果 RAG 镜像不可用，可以注释掉这行
     restart: always
     networks:
       - aipyq-network
     extra_hosts:
-    - "host.docker.internal:host-gateway"
+      - "host.docker.internal:host-gateway"
     env_file:
       - .env
     environment:
@@ -76,25 +77,26 @@ services:
       - MEILI_NO_ANALYTICS=true
     volumes:
       - ./meili_data_v1.12:/meili_data
-  # vectordb:  # 主要用于 RAG，如果禁用 RAG 可以注释
-  #   image: pgvector/pgvector:0.8.0-pg15-trixie
-  #   environment:
-  #     POSTGRES_DB: mydatabase
-  #     POSTGRES_USER: myuser
-  #     POSTGRES_PASSWORD: mypassword
-  #   restart: always
-  #   volumes:
-  #     - pgdata2:/var/lib/postgresql/data
-  # rag_api:  # 如果镜像不可用或不需要 RAG 功能，可以注释掉整个服务
-  #   image: ghcr.io/constanji/aipyq-rag-api-dev-lite:latest
-  #   environment:
-  #     - DB_HOST=vectordb
-  #     - RAG_PORT=${RAG_PORT:-8000}
-  #   restart: always
-  #   depends_on:
-  #     - vectordb
-  #   env_file:
-  #     - .env
+  vectordb:  # PG向量数据库，主要用于 RAG
+    container_name: vectordb
+    image: pgvector/pgvector:0.8.0-pg15-trixie
+    ports:
+      - "5234:5432"  # 映射外部端口5234到容器内端口5432
+    environment:
+      POSTGRES_DB: Aipyq
+      POSTGRES_USER: Aipyq
+      POSTGRES_PASSWORD: Aipyq
+    restart: always
+    networks:
+      - aipyq-network
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U Aipyq -d Aipyq"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 networks:
   aipyq-network:
