@@ -1,7 +1,9 @@
 # v0.8.1-rc2
 
 # Base node image
-FROM node:20-alpine AS node
+# 临时使用镜像代理前缀以解决 buildx 网络问题（buildx 不经过 Docker daemon 的镜像加速器）
+# 如果网络正常，可以改回 node:20-alpine
+FROM docker.m.daocloud.io/library/node:20-alpine AS node
 
 # Install jemalloc
 RUN apk add --no-cache jemalloc

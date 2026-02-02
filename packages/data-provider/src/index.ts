@@ -33,10 +33,12 @@ export * from './accessPermissions';
 export * from './keys';
 /* api call helpers */
 export * from './headers-helpers';
-export { loginPage, registerPage, apiBaseUrl } from './api-endpoints';
+export { loginPage, registerPage, apiBaseUrl, fileContent } from './api-endpoints';
 export { default as request } from './request';
 export { dataService };
 import * as dataService from './data-service';
+// 导出 getFileContent 以便直接使用
+export { getFileContent } from './data-service';
 /* general helpers */
 export * from './utils';
 export * from './actions';

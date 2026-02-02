@@ -23,6 +23,11 @@ const plugins = [
     extensions: ['.js', '.jsx', '.ts', '.tsx'],
     browser: true,
     preferBuiltins: false,
+    // 在 workspace 中 peer 依赖常被提升到根 node_modules，必须让 Rollup 能解析到
+    modulePaths: [
+      pathResolve(__dirname, 'node_modules'),
+      pathResolve(__dirname, '../../node_modules'),
+    ],
   }),
   replace({
     'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'production'),

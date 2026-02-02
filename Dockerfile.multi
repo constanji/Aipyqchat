@@ -2,16 +2,34 @@
 # v0.8.1-rc2
 
 # Base for all builds
-FROM node:20-alpine AS base-min
-# Install jemalloc
-RUN apk add --no-cache jemalloc
-# Set environment variable to use jemalloc
-ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
+# 使用 Debian slim 镜像（自带 glibc，完美支持 onnxruntime-node / @xenova/transformers）
+# 临时使用镜像代理前缀以解决 buildx 网络问题（buildx 不经过 Docker daemon 的镜像加速器）
+# 如果网络正常，可以改回 node:20-bookworm-slim
+FROM docker.m.daocloud.io/library/node:20-bookworm-slim AS base-min
 WORKDIR /app
-RUN apk --no-cache add curl
-RUN npm config set fetch-retry-maxtimeout 600000 && \
+# 安装构建工具和 Python（用于编译 native 模块如 sharp）
+# 安装 vips 以便 sharp 可以使用系统 libvips，避免下载二进制文件
+# 安装 jemalloc（可选，用于内存优化）
+# Debian 自带 glibc，无需额外安装，完美支持 onnxruntime-node
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    python3 \
+    python3-pip \
+    build-essential \
+    libvips \
+    libvips-dev \
+    ca-certificates \
+    libjemalloc2 \
+    && rm -rf /var/lib/apt/lists/*
+# Set environment variable to use jemalloc
+ENV LD_PRELOAD=/usr/lib/x86_64-linux-gnu/libjemalloc.so.2
+# 配置 npm 镜像源和重试设置（解决网络问题）
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm config set fetch-retry-maxtimeout 600000 && \
     npm config set fetch-retries 5 && \
     npm config set fetch-retry-mintimeout 15000
+# 配置 node-gyp 使用 Python3（通过环境变量）
+ENV PYTHON=python3
 COPY package*.json ./
 COPY packages/data-provider/package*.json ./packages/data-provider/
 COPY packages/api/package*.json ./packages/api/
@@ -35,67 +53,97 @@ ENV NODE_OPTIONS="--max-old-space-size=8192"
 # Build only if dist doesn't exist or is empty
 RUN if [ ! -d "agents-Aipyq/dist" ] || [ -z "$(ls -A agents-Aipyq/dist 2>/dev/null)" ]; then \
       echo "Building agents-Aipyq (dist not found)..."; \
-      cd agents-Aipyq && npm install --no-audit && DISABLE_SOURCEMAP=true npm run build; \
+      cd agents-Aipyq && npm install --no-audit --legacy-peer-deps && DISABLE_SOURCEMAP=true npm run build; \
     else \
       echo "Using existing dist directory, skipping build"; \
     fi
 
 # Install all dependencies for every build
-FROM base-min AS base
+# 这个阶段只负责安装依赖，不进行构建
+FROM base-min AS base-deps
 WORKDIR /app
 COPY --from=agents-build /app/agents-Aipyq/dist ./agents-Aipyq/dist
 COPY --from=agents-build /app/agents-Aipyq/package.json ./agents-Aipyq/package.json
 COPY --from=agents-build /app/agents-Aipyq/husky-setup.js ./agents-Aipyq/husky-setup.js
+# 复制所有 package.json 文件（包括 client），确保 npm install 能识别所有工作区
+COPY package*.json ./
+COPY packages/data-provider/package*.json ./packages/data-provider/
+COPY packages/api/package*.json ./packages/api/
+COPY packages/data-schemas/package*.json ./packages/data-schemas/
+COPY packages/client/package*.json ./packages/client/
+COPY client/package.json ./client/
+COPY api/package.json ./api/
 ENV HUSKY=0
 ENV CI=true
-RUN npm ci
+# 使用 npm install --legacy-peer-deps 替代 npm ci，解决可能的依赖版本冲突
+# 安装所有工作区的依赖（包括 client 的所有依赖）
+RUN npm install --legacy-peer-deps
+
+# Base stage with dependencies installed
+FROM base-deps AS base
+WORKDIR /app
 
 # Build `data-provider` package
-FROM base AS data-provider-build
-WORKDIR /app/packages/data-provider
-COPY packages/data-provider ./
+# 继承 base-deps 确保有完整的 node_modules
+FROM base-deps AS data-provider-build
+WORKDIR /app
+COPY packages/data-provider ./packages/data-provider
 ENV NODE_OPTIONS="--max-old-space-size=4096"
+WORKDIR /app/packages/data-provider
 RUN npm run build
 
 # Build `data-schemas` package
-FROM base AS data-schemas-build
-WORKDIR /app/packages/data-schemas
-COPY packages/data-schemas ./
+# 继承 base-deps 确保有完整的 node_modules
+FROM base-deps AS data-schemas-build
+WORKDIR /app
+COPY packages/data-schemas ./packages/data-schemas
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 ENV NODE_OPTIONS="--max-old-space-size=4096"
+WORKDIR /app/packages/data-schemas
 RUN npm run build
 
 # Build `api` package
-FROM base AS api-package-build
-WORKDIR /app/packages/api
-COPY packages/api ./
+# 继承 base-deps 确保有完整的 node_modules
+FROM base-deps AS api-package-build
+WORKDIR /app
+COPY packages/api ./packages/api
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 COPY --from=data-schemas-build /app/packages/data-schemas/dist /app/packages/data-schemas/dist
 ENV NODE_OPTIONS="--max-old-space-size=8192"
+WORKDIR /app/packages/api
 RUN npm run build
 
 # Build `client` package
-FROM base AS client-package-build
-WORKDIR /app/packages/client
-COPY packages/client ./
+# 继承 base-deps 确保有完整的 node_modules
+FROM base-deps AS client-package-build
+WORKDIR /app
+COPY packages/client ./packages/client
 ENV NODE_OPTIONS="--max-old-space-size=4096"
+WORKDIR /app/packages/client
 RUN npm run build
 
 # Client build
-FROM base AS client-build
-WORKDIR /app/client
-COPY client ./
+# 继承 base-deps 确保有完整的 node_modules
+FROM base-deps AS client-build
+WORKDIR /app
+COPY client ./client
 COPY --from=data-provider-build /app/packages/data-provider/dist /app/packages/data-provider/dist
 COPY --from=client-package-build /app/packages/client/dist /app/packages/client/dist
 COPY --from=client-package-build /app/packages/client/src /app/packages/client/src
 ENV NODE_OPTIONS="--max-old-space-size=4096"
+WORKDIR /app/client
 RUN npm run build
 
 # API setup (including client dist)
 FROM base-min AS api-build
-# Add `uv` for extended MCP support
-COPY --from=ghcr.io/astral-sh/uv:0.6.13 /uv /uvx /bin/
-RUN uv --version
+# Add `uv` for extended MCP support (required for MCP functionality)
+# 注意：Python、vips 和构建工具已在 base-min 阶段安装
+# 使用官方安装脚本安装 uv（Debian 推荐方式）
+# 安装脚本会将 uv 安装到 /root/.local/bin，需要创建软链接到 /usr/local/bin
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh && \
+    ln -s /root/.local/bin/uv /usr/local/bin/uv && \
+    ln -s /root/.local/bin/uvx /usr/local/bin/uvx && \
+    uv --version && echo "✓ uv installed successfully"
 WORKDIR /app
 # Copy package files and agents-Aipyq dist before installing dependencies
 COPY package*.json ./
@@ -106,12 +154,22 @@ COPY --from=agents-build /app/agents-Aipyq/husky-setup.js ./agents-Aipyq/husky-s
 # Set environment variables to skip husky setup
 ENV HUSKY=0
 ENV CI=true
+# 配置 npm 镜像源（解决网络问题）
+RUN npm config set registry https://registry.npmmirror.com && \
+    npm config set fetch-retry-maxtimeout 600000 && \
+    npm config set fetch-retries 5 && \
+    npm config set fetch-retry-mintimeout 15000
 # Install only production deps
-RUN npm ci --omit=dev
+# 由于已安装 vips 和 libvips-dev，sharp 会自动使用系统 libvips，避免下载二进制文件
+# 使用 npm install --legacy-peer-deps 替代 npm ci，解决可能的依赖版本冲突
+RUN npm install --omit=dev --legacy-peer-deps
 # Certain build artifacts need mongodb runtime deps (may not be prod deps)
-RUN npm install mongodb --omit=dev
+RUN npm install mongodb --omit=dev --legacy-peer-deps
 # Fix case-sensitive imports: @Aipyq/* -> @aipyq/*
 RUN ln -s /app/node_modules/@aipyq /app/node_modules/@Aipyq || true
+# 验证关键依赖是否正确安装（特别是 @xenova/transformers）
+# Debian 自带 glibc，无需设置 LD_LIBRARY_PATH，onnxruntime-node 可以直接工作
+RUN node -e "try { const path = require.resolve('@xenova/transformers'); console.log('✓ @xenova/transformers found at:', path); require('@xenova/transformers'); console.log('✓ @xenova/transformers loaded successfully'); } catch(e) { console.error('✗ @xenova/transformers error:', e.message, e.stack); process.exit(1); }"
 COPY api ./api
 COPY config ./config
 COPY specs ./specs

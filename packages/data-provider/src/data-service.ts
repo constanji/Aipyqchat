@@ -580,6 +580,10 @@ export const getFileDownload = async (userId: string, file_id: string): Promise<
   });
 };
 
+export const getFileContent = async (userId: string, file_id: string): Promise<{ content: string; filename: string; type: string; size: number }> => {
+  return request.get(endpoints.fileContent(userId, file_id));
+};
+
 export const getCodeOutputDownload = async (url: string): Promise<AxiosResponse> => {
   return request.getResponse(url, {
     responseType: 'blob',

@@ -3,7 +3,6 @@ import typescript from '@rollup/plugin-typescript';
 import commonjs from '@rollup/plugin-commonjs';
 import nodeResolve from '@rollup/plugin-node-resolve';
 import peerDepsExternal from 'rollup-plugin-peer-deps-external';
-import alias from '@rollup/plugin-alias';
 
 export default {
   input: 'src/index.ts',
@@ -20,12 +19,6 @@ export default {
     },
   ],
   plugins: [
-    // Resolve path aliases (must be before other plugins)
-    alias({
-      entries: [
-        { find: /^~\/(.*)/, replacement: './src/$1' },
-      ],
-    }),
     // Allow importing JSON files
     json(),
     // Automatically externalize peer dependencies
