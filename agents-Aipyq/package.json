@@ -98,7 +98,7 @@
   "overrides": {
     "@langchain/openai": "0.5.18",
     "@browserbasehq/stagehand": {
-      "openai": "$openai"
+      "openai": "5.8.2"
     }
   },
   "dependencies": {
@@ -116,6 +116,7 @@
     "@langfuse/langchain": "^4.3.0",
     "@langfuse/otel": "^4.3.0",
     "@langfuse/tracing": "^4.3.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.207.0",
     "@opentelemetry/sdk-node": "^0.207.0",
     "axios": "^1.12.1",
     "cheerio": "^1.0.0",
