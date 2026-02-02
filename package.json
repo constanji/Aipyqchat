@@ -86,6 +86,10 @@
     "url": "https://github.com/constanji/Aipyqchat/issues"
   },
   "homepage": "https://www.aipyq.com/",
+  "dependencies": {
+    "@opentelemetry/exporter-trace-otlp-http": "^0.207.0",
+    "@opentelemetry/sdk-node": "^0.207.0"
+  },
   "devDependencies": {
     "@eslint/compat": "^1.2.6",
     "@eslint/eslintrc": "^3.3.1",
