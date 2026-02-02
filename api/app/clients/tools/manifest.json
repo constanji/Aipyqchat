@@ -187,5 +187,19 @@
     "description": "生辰八字/星座分析工具，根据用户输入使用模板系统生成规范的八字命盘、命理分析和星座分析报告。Commands: generate (生成八字命盘或星座分析报告), analyze (进行八字分析或运势预测), templates (列出可用模板).",
     "icon": "🔮",
     "authConfig": []
+  },
+  {
+    "name": "写作助手",
+    "pluginKey": "writing",
+    "description": "公文写作辅助工具，支持需求澄清、内容生成、格式规范。Commands: clarify (澄清写作需求，收集领导类型/场景/字数/受众/参考资料等信息), generate (根据需求生成内容), templates (列出可用模板), refine (润色优化内容), outline (生成写作大纲).",
+    "icon": "✍️",
+    "authConfig": []
+  },
+  {
+    "name": "RAG写作助手",
+    "pluginKey": "writing_rag",
+    "description": "基于RAG的写作辅助工具，支持存储参考文献、分析文风特征、基于文风生成内容。Commands: add_reference (添加参考文献到知识库), analyze_style (分析文献文风特征), generate_with_style (基于参考文风生成内容), search_references (搜索相关参考文献), list_references (列出已存储的参考文献).",
+    "icon": "📚",
+    "authConfig": []
   }
 ]

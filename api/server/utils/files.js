@@ -64,4 +64,42 @@ const cleanFileName = (fileName) => {
   return cleaned;
 };
 
-module.exports = { determineFileType, getBufferMetadata, cleanFileName };
+/**
+ * 修复文件名编码问题
+ * Node.js multer 经常将 UTF-8 文件名错误地按 Latin1 解码
+ * 这个函数将 Latin1 编码的字符串重新解码为 UTF-8
+ * 
+ * @param {string} name - 可能被错误解码的文件名
+ * @returns {string} 修复后的文件名
+ */
+function fixFilenameEncoding(name) {
+  if (!name || typeof name !== 'string') {
+    return name || '';
+  }
+
+  try {
+    // 检查是否包含乱码字符（Latin1 错误解码的特征）
+    // 如果文件名包含大量非 ASCII 字符且看起来像乱码，尝试修复
+    const hasGarbledChars = /[^\x00-\x7F]/.test(name) && /[à-ÿ]/.test(name);
+    
+    if (hasGarbledChars) {
+      // 尝试将 Latin1 编码的字符串重新解码为 UTF-8
+      // 这是 Node.js multer 的常见问题：UTF-8 文件名被当成 Latin1 读取
+      const fixed = Buffer.from(name, 'latin1').toString('utf8');
+      // 验证修复后的字符串是否包含有效的中文字符
+      if (/[\u4e00-\u9fa5]/.test(fixed)) {
+        return fixed;
+      }
+    }
+    
+    // 如果已经是正确的 UTF-8 或修复失败，返回原始名称
+    return name;
+  } catch (error) {
+    // 如果转换失败，返回原始名称
+    const { logger } = require('@aipyq/data-schemas');
+    logger.warn(`[fixFilenameEncoding] 文件名编码修复失败: ${name}`, error.message);
+    return name;
+  }
+}
+
+module.exports = { determineFileType, getBufferMetadata, cleanFileName, fixFilenameEncoding };

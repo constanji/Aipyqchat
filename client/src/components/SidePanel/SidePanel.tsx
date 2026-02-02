@@ -1,8 +1,12 @@
 import { useState, useCallback, useMemo, memo } from 'react';
-import { getEndpointField } from '@aipyq/data-provider';
-import { useUserKeyQuery } from '@aipyq/data-provider/react-query';
-import { ResizableHandleAlt, ResizablePanel, useMediaQuery } from '@aipyq/client';
-import type { TEndpointsConfig, TInterfaceConfig } from '@aipyq/data-provider';
+import { getEndpointField } from "@aipyq/data-provider";
+import { useUserKeyQuery } from "@aipyq/data-provider/react-query";
+import {
+  ResizableHandleAlt,
+  ResizablePanel,
+  useMediaQuery,
+} from "@aipyq/client";
+import type { TEndpointsConfig, TInterfaceConfig } from "@aipyq/data-provider";
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import useSideNavLinks from '~/hooks/Nav/useSideNavLinks';
 import { useLocalStorage, useLocalize } from '~/hooks';

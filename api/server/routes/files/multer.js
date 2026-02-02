@@ -9,6 +9,7 @@ const {
   fileConfig: defaultFileConfig,
 } = require('@aipyq/data-provider');
 const { getAppConfig } = require('~/server/services/Config');
+const { fixFilenameEncoding } = require('~/server/utils/files');
 
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -21,8 +22,19 @@ const storage = multer.diskStorage({
   },
   filename: function (req, file, cb) {
     req.file_id = crypto.randomUUID();
-    file.originalname = decodeURIComponent(file.originalname);
-    const sanitizedFilename = sanitizeFilename(file.originalname);
+    // 修复文件名编码问题（multer 可能将 UTF-8 文件名错误地按 Latin1 解码）
+    // 先尝试 URI 解码，然后修复 Latin1 编码问题
+    let fixedName = file.originalname;
+    try {
+      if (fixedName.includes('%')) {
+        fixedName = decodeURIComponent(fixedName);
+      }
+    } catch (e) {
+      // URI 解码失败，继续使用原始名称
+    }
+    fixedName = fixFilenameEncoding(fixedName);
+    file.originalname = fixedName; // 更新 file.originalname，确保后续处理使用修复后的文件名
+    const sanitizedFilename = sanitizeFilename(fixedName);
     cb(null, sanitizedFilename);
   },
 });

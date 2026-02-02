@@ -1,8 +1,13 @@
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import throttle from 'lodash/throttle';
 import { useRecoilValue } from 'recoil';
-import { getConfigDefaults } from '@aipyq/data-provider';
-import { ResizableHandleAlt, ResizablePanel, ResizablePanelGroup, useMediaQuery } from '@aipyq/client';
+import { getConfigDefaults } from "@aipyq/data-provider";
+import {
+  ResizableHandleAlt,
+  ResizablePanel,
+  ResizablePanelGroup,
+  useMediaQuery,
+} from "@aipyq/client";
 import type { ImperativePanelHandle } from 'react-resizable-panels';
 import { useGetStartupConfig } from '~/data-provider';
 import { normalizeLayout, cn } from '~/utils';

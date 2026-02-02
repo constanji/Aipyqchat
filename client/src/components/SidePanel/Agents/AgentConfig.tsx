@@ -7,7 +7,6 @@ import {
   removeFocusOutlines,
   processAgentOption,
   defaultTextProps,
-  validateEmail,
   getIconKey,
   cn,
 } from '~/utils';
@@ -24,10 +23,8 @@ import Instructions from './Instructions';
 import AgentAvatar from './AgentAvatar';
 import FileContext from './FileContext';
 import SearchForm from './Search/Form';
-import FileSearch from './FileSearch';
 import Artifacts from './Artifacts';
 import AgentTool from './AgentTool';
-import CodeForm from './Code/Form';
 import MCPTools from './MCPTools';
 
 const labelClass = 'mb-2 text-token-text-primary dark:text-text-primary block font-medium';
@@ -78,13 +75,11 @@ export default function AgentConfig() {
   }, [fileMap, agentFiles]);
 
   const {
-    codeEnabled,
     toolsEnabled,
     contextEnabled,
     actionsEnabled,
     artifactsEnabled,
     webSearchEnabled,
-    fileSearchEnabled,
   } = useAgentCapabilities(agentsConfig?.capabilities);
 
   const context_files = useMemo(() => {
@@ -107,45 +102,6 @@ export default function AgentConfig() {
     return _agent.context_files ?? [];
   }, [agent, agent_id, mergedFileMap]);
 
-  const knowledge_files = useMemo(() => {
-    if (typeof agent === 'string') {
-      return [];
-    }
-
-    if (agent?.id !== agent_id) {
-      return [];
-    }
-
-    if (agent.knowledge_files) {
-      return agent.knowledge_files;
-    }
-
-    const _agent = processAgentOption({
-      agent,
-      fileMap: mergedFileMap,
-    });
-    return _agent.knowledge_files ?? [];
-  }, [agent, agent_id, mergedFileMap]);
-
-  const code_files = useMemo(() => {
-    if (typeof agent === 'string') {
-      return [];
-    }
-
-    if (agent?.id !== agent_id) {
-      return [];
-    }
-
-    if (agent.code_files) {
-      return agent.code_files;
-    }
-
-    const _agent = processAgentOption({
-      agent,
-      fileMap: mergedFileMap,
-    });
-    return _agent.code_files ?? [];
-  }, [agent, agent_id, mergedFileMap]);
 
   const handleAddActions = useCallback(() => {
     if (isEphemeralAgent(agent_id)) {
@@ -283,25 +239,19 @@ export default function AgentConfig() {
             </div>
           </button>
         </div>
-        {(codeEnabled ||
-          fileSearchEnabled ||
-          artifactsEnabled ||
+        {(artifactsEnabled ||
           contextEnabled ||
           webSearchEnabled) && (
           <div className="mb-4 flex w-full flex-col items-start gap-3">
             <label className="text-token-text-primary block font-medium">
               {localize('com_assistants_capabilities')}
             </label>
-            {/* Code Execution */}
-            {codeEnabled && <CodeForm agent_id={agent_id} files={code_files} />}
             {/* Web Search */}
             {webSearchEnabled && <SearchForm />}
             {/* File Context */}
             {contextEnabled && <FileContext agent_id={agent_id} files={context_files} />}
             {/* Artifacts */}
             {artifactsEnabled && <Artifacts />}
-            {/* File Search */}
-            {fileSearchEnabled && <FileSearch agent_id={agent_id} files={knowledge_files} />}
           </div>
         )}
         {/* MCP Section */}
@@ -375,104 +325,6 @@ export default function AgentConfig() {
                   </div>
                 </button>
               )}
-            </div>
-          </div>
-        </div>
-        {/* Support Contact (Optional) */}
-        <div className="mb-4">
-          <div className="mb-1.5 flex items-center gap-2">
-            <span>
-              <label className="text-token-text-primary block font-medium">
-                {localize('com_ui_support_contact')}
-              </label>
-            </span>
-          </div>
-          <div className="space-y-3">
-            {/* Support Contact Name */}
-            <div className="flex flex-col">
-              <label
-                className="mb-1 flex items-center justify-between"
-                htmlFor="support-contact-name"
-              >
-                <span className="text-sm">{localize('com_ui_support_contact_name')}</span>
-              </label>
-              <Controller
-                name="support_contact.name"
-                control={control}
-                rules={{
-                  minLength: {
-                    value: 3,
-                    message: localize('com_ui_support_contact_name_min_length', { minLength: 3 }),
-                  },
-                }}
-                render={({ field, fieldState: { error } }) => (
-                  <>
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      className={cn(inputClass, error ? 'border-2 border-red-500' : '')}
-                      id="support-contact-name"
-                      type="text"
-                      placeholder={localize('com_ui_support_contact_name_placeholder')}
-                      aria-label="Support contact name"
-                      aria-invalid={error ? 'true' : 'false'}
-                      aria-describedby={error ? 'support-contact-name-error' : undefined}
-                    />
-                    {error && (
-                      <span
-                        id="support-contact-name-error"
-                        className="text-sm text-red-500 transition duration-300 ease-in-out"
-                        role="alert"
-                        aria-live="polite"
-                      >
-                        {error.message}
-                      </span>
-                    )}
-                  </>
-                )}
-              />
-            </div>
-            {/* Support Contact Email */}
-            <div className="flex flex-col">
-              <label
-                className="mb-1 flex items-center justify-between"
-                htmlFor="support-contact-email"
-              >
-                <span className="text-sm">{localize('com_ui_support_contact_email')}</span>
-              </label>
-              <Controller
-                name="support_contact.email"
-                control={control}
-                rules={{
-                  validate: (value) =>
-                    validateEmail(value ?? '', localize('com_ui_support_contact_email_invalid')),
-                }}
-                render={({ field, fieldState: { error } }) => (
-                  <>
-                    <input
-                      {...field}
-                      value={field.value ?? ''}
-                      className={cn(inputClass, error ? 'border-2 border-red-500' : '')}
-                      id="support-contact-email"
-                      type="email"
-                      placeholder={localize('com_ui_support_contact_email_placeholder')}
-                      aria-label="Support contact email"
-                      aria-invalid={error ? 'true' : 'false'}
-                      aria-describedby={error ? 'support-contact-email-error' : undefined}
-                    />
-                    {error && (
-                      <span
-                        id="support-contact-email-error"
-                        className="text-sm text-red-500 transition duration-300 ease-in-out"
-                        role="alert"
-                        aria-live="polite"
-                      >
-                        {error.message}
-                      </span>
-                    )}
-                  </>
-                )}
-              />
             </div>
           </div>
         </div>

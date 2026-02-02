@@ -147,7 +147,7 @@ function Footer({ startupConfig }: { startupConfig: TStartupConfig | null | unde
     );
   })();
 
-  const footerElements = [mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
+  const footerElements = [/* mainContentRender, privacyPolicyRender, */ termsOfServiceRender].filter(
     Boolean,
   );
 

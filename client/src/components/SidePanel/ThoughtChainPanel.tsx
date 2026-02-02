@@ -1,14 +1,26 @@
-import { useEffect, memo, useMemo, useState } from 'react';
-import { ConfigProvider, Typography, Flex } from 'antd';
-import type { ThoughtChainItemType } from '@ant-design/x';
-import { ThoughtChain, CodeHighlighter } from '@ant-design/x';
-import { CheckCircleTwoTone, LoadingOutlined, CloseCircleTwoTone, CodeOutlined } from '@ant-design/icons';
-import { actionDelimiter, actionDomainSeparator, Constants } from '@aipyq/data-provider';
-import { useChatContext } from '~/Providers';
-import type { MessageToolCalls, MessageContentItem } from '~/utils/parseDatServerResponse';
-import { mapAttachments } from '~/utils/map';
-import { useLocalize } from '~/hooks';
-import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
+import { useEffect, memo, useMemo, useState } from "react";
+import { ConfigProvider, Typography, Flex } from "antd";
+import type { ThoughtChainItemType } from "@ant-design/x";
+import { ThoughtChain, CodeHighlighter } from "@ant-design/x";
+import {
+  CheckCircleTwoTone,
+  LoadingOutlined,
+  CloseCircleTwoTone,
+  CodeOutlined,
+} from "@ant-design/icons";
+import {
+  actionDelimiter,
+  actionDomainSeparator,
+  Constants,
+} from "@aipyq/data-provider";
+import { useChatContext } from "~/Providers";
+import type {
+  MessageToolCalls,
+  ThoughtChainData,
+} from "~/utils/parseDatServerResponse";
+import { mapAttachments } from "~/utils/map";
+import { useLocalize } from "~/hooks";
+import MarkdownLite from "~/components/Chat/Messages/Content/MarkdownLite";
 
 const { Text } = Typography;
 
@@ -23,70 +35,36 @@ interface ThoughtChainPanelProps {
   onRenderChange: (shouldRender: boolean) => void;
 }
 
-
 /**
  * SQL 执行结果组件
  */
 function SqlExecuteResult({ content }: { content: string }) {
-  const parsed = useMemo(() => {
+  const formattedContent = useMemo(() => {
     try {
       let toParse = content.trim();
       if (toParse.startsWith('"') && toParse.endsWith('"')) {
-        toParse = JSON.parse(toParse);
+        try {
+          const unquoted = JSON.parse(toParse);
+          if (typeof unquoted === "string") {
+            toParse = unquoted;
+          } else {
+            return JSON.stringify(unquoted, null, 2);
+          }
+        } catch {
+          // ignore
+        }
       }
-      if (typeof toParse === 'string') {
-        return JSON.parse(toParse);
-      }
-      return toParse;
+      const parsed = JSON.parse(toParse);
+      return JSON.stringify(parsed, null, 2);
     } catch {
-      return null;
+      return content;
     }
   }, [content]);
 
-  if (Array.isArray(parsed) && parsed.length > 0) {
-    const keys = Object.keys(parsed[0]);
-    return (
-      <div className="overflow-x-auto">
-        <table className="min-w-full border-collapse border border-border-light text-sm">
-          <thead>
-            <tr className="bg-surface-secondary">
-              {keys.map((key) => (
-                <th
-                  key={key}
-                  className="border border-border-light px-2 py-1 text-left font-medium text-text-primary"
-                >
-                  {key}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {parsed.slice(0, 20).map((row: any, idx: number) => (
-              <tr key={idx} className="hover:bg-surface-tertiary">
-                {keys.map((key) => (
-                  <td key={key} className="border border-border-light px-2 py-1 text-text-primary">
-                    {typeof row[key] === 'number'
-                      ? row[key].toLocaleString('zh-CN', { maximumFractionDigits: 2 })
-                      : String(row[key] ?? '')}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        {parsed.length > 20 && (
-          <div className="mt-1 text-xs text-text-secondary">
-            显示前 20 条，共 {parsed.length} 条记录
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
-    <div className="max-h-40 overflow-auto rounded bg-surface-tertiary p-2 text-sm text-text-primary">
-      <pre className="whitespace-pre-wrap break-words text-text-primary">{content}</pre>
-    </div>
+    <StyledCodeHighlighter lang="json">
+      {formattedContent}
+    </StyledCodeHighlighter>
   );
 }
 
@@ -94,7 +72,13 @@ function SqlExecuteResult({ content }: { content: string }) {
  * 代码块组件 - 用于展示工具调用的参数和输出
  * 修复溢出问题，确保内容在容器内正确显示
  */
-function OptimizedCodeBlock({ text, maxHeight = 200 }: { text: string; maxHeight?: number }) {
+function OptimizedCodeBlock({
+  text,
+  maxHeight = 200,
+}: {
+  text: string;
+  maxHeight?: number;
+}) {
   const formatText = (str: string) => {
     try {
       return JSON.stringify(JSON.parse(str), null, 2);
@@ -106,23 +90,193 @@ function OptimizedCodeBlock({ text, maxHeight = 200 }: { text: string; maxHeight
   return (
     <div
       className="mt-1 w-full overflow-hidden rounded-md bg-surface-tertiary"
-      style={{ maxWidth: '100%' }}
+      style={{ maxWidth: "100%" }}
     >
       <div
         className="overflow-auto p-2 text-xs text-text-primary"
-        style={{ maxHeight, maxWidth: '100%' }}
+        style={{ maxHeight, maxWidth: "100%" }}
       >
         <pre
           className="m-0 whitespace-pre-wrap"
           style={{
-            wordBreak: 'break-all',
-            overflowWrap: 'break-word',
-            maxWidth: '100%',
+            wordBreak: "break-all",
+            overflowWrap: "break-word",
+            maxWidth: "100%",
           }}
         >
           <code>{formatText(text)}</code>
         </pre>
       </div>
+    </div>
+  );
+}
+
+/**
+ * 包装 CodeHighlighter 以解决主题和溢出问题
+ */
+function StyledCodeHighlighter({
+  lang,
+  children,
+}: {
+  lang: string;
+  children: string;
+}) {
+  return (
+    <div
+      className="overflow-hidden rounded-md border border-border-light bg-[#1e1e1e] custom-code-highlighter-wrapper"
+      style={{ maxWidth: "100%", width: "100%" }}
+    >
+      <CodeHighlighter
+        lang={lang}
+        style={{
+          backgroundColor: "transparent",
+          maxWidth: "100%",
+          width: "100%",
+          fontSize: "12px",
+        }}
+      >
+        {children}
+      </CodeHighlighter>
+    </div>
+  );
+}
+
+/**
+ * becauseai-server 思维链内容组件 - 显示推理过程
+ * 插入到原有的样式体系中
+ */
+function DatServerThoughtChainContent({ data }: { data: ThoughtChainData }) {
+  const items = useMemo(() => {
+    const result: ExtendedThoughtChainItemType[] = [];
+
+    // 1. 意图分类
+    if (data.intentClassification) {
+      const intent = data.intentClassification;
+      result.push({
+        key: "intent",
+        title: "意图分类",
+        // description: intent.intent || '',
+        status: "success",
+        collapsible: true,
+        content: (
+          <div className="space-y-2 text-sm">
+            {intent.intent && (
+              <div>
+                <span className="font-medium text-text-primary">意图:</span>{" "}
+                <span className="text-text-secondary">{intent.intent}</span>
+              </div>
+            )}
+            {intent.rephrased_question && (
+              <div>
+                <span className="font-medium text-text-primary">重述问题:</span>{" "}
+                <span className="text-text-secondary">
+                  {intent.rephrased_question}
+                </span>
+              </div>
+            )}
+            {intent.reasoning && (
+              <div>
+                <span className="font-medium text-text-primary">推理:</span>{" "}
+                <span className="text-text-secondary">{intent.reasoning}</span>
+              </div>
+            )}
+          </div>
+        ),
+      });
+    }
+
+    // 2. SQL 生成推理
+    if (data.sqlGenerationReasoning) {
+      result.push({
+        key: "reasoning",
+        title: "SQL 生成推理",
+        status: "success",
+        collapsible: true,
+        content: (
+          <div
+            className="markdown-content-wrapper"
+            style={{
+              maxWidth: "100%",
+              overflowWrap: "break-word",
+              wordWrap: "break-word",
+              wordBreak: "break-word",
+            }}
+          >
+            <MarkdownLite content={data.sqlGenerationReasoning} />
+          </div>
+        ),
+      });
+    }
+
+    // 3. SQL 生成
+    if (data.sqlGenerate) {
+      result.push({
+        key: "generate",
+        title: "SQL 生成",
+        status: "success",
+        collapsible: true,
+        content: (
+          <StyledCodeHighlighter lang="sql">
+            {data.sqlGenerate}
+          </StyledCodeHighlighter>
+        ),
+      });
+    }
+
+    // 4. 语义 SQL 转换
+    if (data.semanticToSql) {
+      const isError =
+        typeof data.semanticToSql === "string" &&
+        data.semanticToSql.toLowerCase().includes("error");
+      result.push({
+        key: "semantic",
+        title: "语义 SQL 转换",
+        status: isError ? "error" : "success",
+        collapsible: true,
+        content: isError ? (
+          <div className="text-sm text-red-500">{data.semanticToSql}</div>
+        ) : (
+          <StyledCodeHighlighter lang="sql">
+            {data.semanticToSql}
+          </StyledCodeHighlighter>
+        ),
+      });
+    }
+
+    // 5. SQL 执行结果
+    if (data.sqlExecute) {
+      result.push({
+        key: "execute",
+        title: "SQL 执行结果",
+        status: "success",
+        collapsible: true,
+        content: <SqlExecuteResult content={data.sqlExecute} />,
+      });
+    }
+
+    // 6. 异常信息
+    if (data.exception) {
+      result.push({
+        key: "exception",
+        title: "异常信息",
+        description: data.exception.message || "",
+        status: "error",
+      });
+    }
+
+    return result;
+  }, [data]);
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-2 border-t border-border-light pt-2">
+      <div className="mb-2 text-xs font-medium text-text-secondary">
+        推理过程
+      </div>
+      <ThoughtChain items={items} defaultExpandedKeys={[]} />
     </div>
   );
 }
@@ -136,25 +290,29 @@ function ToolCallDetailContent({
   domain,
   function_name,
   localize,
+  thoughtChain,
 }: {
   args: string;
   output?: string | null;
   domain: string | null;
   function_name: string;
-  // 使用宽松类型避免与 useLocalize 的类型签名不兼容
   localize: any;
+  thoughtChain: ThoughtChainData | null;
 }) {
   const hasOutput = output != null && output.length > 0;
 
   return (
-    <div className="w-full space-y-3 overflow-hidden" style={{ maxWidth: '100%' }}>
+    <div
+      className="w-full space-y-3 overflow-hidden"
+      style={{ maxWidth: "100%" }}
+    >
       {/* 参数 */}
       {args && (
-        <div className="w-full overflow-hidden" style={{ maxWidth: '100%' }}>
+        <div className="w-full overflow-hidden" style={{ maxWidth: "100%" }}>
           <Text type="secondary" className="mb-1 block text-xs">
             {domain
-              ? localize('com_assistants_domain_info', { 0: domain })
-              : localize('com_assistants_function_use', { 0: function_name })}
+              ? localize("com_assistants_domain_info", { 0: domain })
+              : localize("com_assistants_function_use", { 0: function_name })}
           </Text>
           <OptimizedCodeBlock text={args} />
         </div>
@@ -162,13 +320,16 @@ function ToolCallDetailContent({
 
       {/* 输出结果 */}
       {hasOutput && (
-        <div className="w-full overflow-hidden" style={{ maxWidth: '100%' }}>
+        <div className="w-full overflow-hidden" style={{ maxWidth: "100%" }}>
           <Text type="secondary" className="mb-1 block text-xs">
-            {localize('com_ui_result')}
+            {localize("com_ui_result")}
           </Text>
           <OptimizedCodeBlock text={output!} />
         </div>
       )}
+
+      {/* becauseai-server 思维链内容 - 新增 */}
+      {thoughtChain && <DatServerThoughtChainContent data={thoughtChain} />}
     </div>
   );
 }
@@ -179,6 +340,7 @@ function ToolCallDetailContent({
  */
 function SidePanelToolCallItem({
   toolCall,
+  thoughtChain,
   isSubmitting,
   itemKey,
 }: {
@@ -191,6 +353,7 @@ function SidePanelToolCallItem({
     auth?: string;
     expires_at?: number;
   };
+  thoughtChain: ThoughtChainData | null;
   attachments?: any[];
   isSubmitting: boolean;
   itemKey: string;
@@ -200,53 +363,55 @@ function SidePanelToolCallItem({
   // 解析工具名称和域名 - 与原生 ToolCall 逻辑一致
   const { function_name, domain, isMCPToolCall } = useMemo(() => {
     const name = toolCall.name;
-    if (typeof name !== 'string') {
-      return { function_name: '', domain: null, isMCPToolCall: false };
+    if (typeof name !== "string") {
+      return { function_name: "", domain: null, isMCPToolCall: false };
     }
     if (name.includes(Constants.mcp_delimiter)) {
       const [func, server] = name.split(Constants.mcp_delimiter);
       return {
-        function_name: func || '',
-        domain: server && (server.replaceAll(actionDomainSeparator, '.') || null),
+        function_name: func || "",
+        domain:
+          server && (server.replaceAll(actionDomainSeparator, ".") || null),
         isMCPToolCall: true,
       };
     }
     const [func, _domain] = name.includes(actionDelimiter)
       ? name.split(actionDelimiter)
-      : [name, ''];
+      : [name, ""];
     return {
-      function_name: func || '',
-      domain: _domain && (_domain.replaceAll(actionDomainSeparator, '.') || null),
+      function_name: func || "",
+      domain:
+        _domain && (_domain.replaceAll(actionDomainSeparator, ".") || null),
       isMCPToolCall: false,
     };
   }, [toolCall.name]);
 
   // 格式化参数
   const args = useMemo(() => {
-    if (typeof toolCall.args === 'string') {
+    if (typeof toolCall.args === "string") {
       return toolCall.args;
     }
     try {
       return JSON.stringify(toolCall.args, null, 2);
     } catch {
-      return '';
+      return "";
     }
   }, [toolCall.args]);
 
   // 状态计算
   const hasOutput = toolCall.output != null && toolCall.output.length > 0;
   const error =
-    typeof toolCall.output === 'string' &&
-    toolCall.output.toLowerCase().includes('error processing tool');
+    typeof toolCall.output === "string" &&
+    toolCall.output.toLowerCase().includes("error processing tool");
   const isLoading = !hasOutput && isSubmitting;
   const cancelled = !isSubmitting && !hasOutput && !error;
 
   // 获取状态 - ThoughtChain 支持 'success' | 'error' | 'loading' 等
-  const getStatus = (): 'success' | 'error' | 'loading' => {
-    if (error) return 'error';
-    if (cancelled) return 'error';
-    if (hasOutput) return 'success';
-    return 'loading';
+  const getStatus = (): "success" | "error" | "loading" => {
+    if (error) return "error";
+    if (cancelled) return "error";
+    if (hasOutput) return "success";
+    return "loading";
   };
 
   // 获取图标 - 使用 TwoTone 图标组件，支持 twoToneColor 属性设置颜色
@@ -265,36 +430,38 @@ function SidePanelToolCallItem({
   const getTitle = () => {
     if (isLoading) {
       return function_name
-        ? localize('com_assistants_running_var', { 0: function_name })
-        : localize('com_assistants_running_action');
+        ? localize("com_assistants_running_var", { 0: function_name })
+        : localize("com_assistants_running_action");
     }
     if (cancelled) {
-      return localize('com_ui_cancelled');
+      return localize("com_ui_cancelled");
     }
     if (isMCPToolCall) {
-      return localize('com_assistants_completed_function', { 0: function_name });
+      return localize("com_assistants_completed_function", {
+        0: function_name,
+      });
     }
     if (domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH) {
-      return localize('com_assistants_completed_action', { 0: domain });
+      return localize("com_assistants_completed_action", { 0: domain });
     }
-    return localize('com_assistants_completed_function', { 0: function_name });
+    return localize("com_assistants_completed_function", { 0: function_name });
   };
 
   // 是否有详情内容
-  const hasDetails = args || hasOutput;
+  const hasDetails = args || hasOutput || thoughtChain;
 
   // 构建 ThoughtChain 项目 - 显式指定类型避免类型错误
   const status = getStatus();
   // 如果没有 domain，就不要在 description 再重复 function_name，避免出现
   //「运行 because」下一行又单独显示「because」的重复效果
   const description =
-    domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH ? domain : '';
+    domain && domain.length !== Constants.ENCODED_DOMAIN_LENGTH ? domain : "";
 
   const toolCallItems: ExtendedThoughtChainItemType[] = [
     {
       key: itemKey,
       title: getTitle(),
-      description,
+      // description,
       icon: getIcon(),
       status,
       collapsible: !!hasDetails,
@@ -305,14 +472,41 @@ function SidePanelToolCallItem({
           domain={domain}
           function_name={function_name}
           localize={localize}
+          thoughtChain={thoughtChain}
         />
       ) : undefined,
     },
   ];
 
+  // 移除内部额外的 ThoughtChain 包装，防止多重缩进导致的溢出
+  // return (
+  //     <div className="w-full overflow-hidden" style={{ maxWidth: '100%' }}>
+  //         <ThoughtChain items={toolCallItems} />
+  //     </div>
+  // );
+
+  // 直接返回 ThoughtChain，但实际上 SidePanelToolCallItem 本身是被父级 ThoughtChain 调用的
+  // 问题在于：父级 ThoughtChain (Round) -> SidePanelToolCallItem -> ThoughtChain (ToolCall) -> DatServerThoughtChainContent -> ThoughtChain (Steps)
+  // 这是三层嵌套。
+  // 为了减少缩进，我们可以手动渲染折叠效果，但这比较复杂。
+  // 另一种方法是使用更紧凑的样式。
+  // 但用户说"它有个缩进的样式，可能是这个问题导致的"，所以减少层级是关键。
+
+  // 尝试方案：保持 ThoughtChain 但强制修改其样式以减少缩进
   return (
-    <div className="w-full overflow-hidden" style={{ maxWidth: '100%' }}>
-      <ThoughtChain items={toolCallItems} />
+    <div className="w-full overflow-hidden" style={{ maxWidth: "100%" }}>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+                /* 针对特定层级减少缩进 */
+                .nested-chain .ant-thought-chain-item-content {
+                    padding-left: 0 !important;
+                    margin-left: 0 !important;
+                }
+             `,
+        }}
+      />
+      <ThoughtChain className="nested-chain" items={toolCallItems} />
     </div>
   );
 }
@@ -381,11 +575,14 @@ const ThoughtChainPanel = memo(function ThoughtChainPanel({
   }
 
   // 构建 ThoughtChain 项目 - 按对话轮次分组
-  // 只展示「包含工具调用」的轮次；纯文本轮次不进入思维链
   const chainItems: ExtendedThoughtChainItemType[] = toolCallsByMessage
-    .filter((messageData) => messageData.toolCalls && messageData.toolCalls.length > 0)
+    .filter(
+      (messageData) =>
+        messageData.toolCalls && messageData.toolCalls.length > 0,
+    )
     .map((messageData, roundIdx) => {
       const roundKey = `round-${roundIdx}`;
+      // 使用 extractedToolCalls 直接获取工具调用
       const toolCount = messageData.toolCalls.length;
       const isStreaming = messageData.isStreaming;
 
@@ -398,53 +595,33 @@ const ThoughtChainPanel = memo(function ThoughtChainPanel({
       if (toolCount > 0) {
         descriptionParts.push(`${toolCount} 个工具调用`);
       }
-      const textCount = messageData.contentItems?.filter((item) => item.type === 'text').length || 0;
-      if (textCount > 0) {
-        descriptionParts.push(`${textCount} 段思考`);
-      }
-      const description = descriptionParts.join('，') || '无内容';
 
-      // 按照 contentItems 的顺序渲染内容
+      const description = descriptionParts.join("，") || "无内容";
+
+      // 渲染内容：遍历 toolCalls
       const renderContentItems = () => {
-        if (!messageData.contentItems || messageData.contentItems.length === 0) {
+        if (!messageData.toolCalls || messageData.toolCalls.length === 0) {
           return null;
         }
 
         return (
-          <Flex gap="small" vertical style={{ width: '100%' }}>
-            {messageData.contentItems.map((item, itemIdx) => {
-              if (item.type === 'text') {
-                // 渲染文本内容（说明类文案：字号与轮次标题一致，但颜色更浅）
-                return (
-                  <Text
-                    key={`${roundKey}-text-${itemIdx}`}
-                    type="secondary"
-                    className="text-sm leading-5 text-text-tertiary"
-                    style={{ width: '100%', wordBreak: 'break-word' }}
-                  >
-                    <div className="prose prose-sm max-w-none text-text-tertiary [&_*]:!text-text-tertiary [&_p]:mb-1.5 [&_p]:last:mb-0">
-                      <MarkdownLite content={item.text || ''} />
-                    </div>
-                  </Text>
-                );
-              } else if (item.type === 'toolCall' && item.toolCall) {
-                // 渲染工具调用
-                const tcKey = `${roundKey}-tc-${itemIdx}`;
-                const tcAttachments = item.toolCall.toolCall.id
-                  ? attachmentsMap[item.toolCall.toolCall.id]
-                  : undefined;
+          <Flex gap="small" vertical style={{ width: "100%" }}>
+            {messageData.toolCalls.map((item, itemIdx) => {
+              const tcKey = `${roundKey}-tc-${itemIdx}`;
+              const tcAttachments = item.toolCall.id
+                ? attachmentsMap[item.toolCall.id]
+                : undefined;
 
-                return (
-                  <SidePanelToolCallItem
-                    key={tcKey}
-                    itemKey={tcKey}
-                    toolCall={item.toolCall.toolCall}
-                    attachments={tcAttachments}
-                    isSubmitting={isSubmitting}
-                  />
-                );
-              }
-              return null;
+              return (
+                <SidePanelToolCallItem
+                  key={tcKey}
+                  itemKey={tcKey}
+                  toolCall={item.toolCall}
+                  thoughtChain={item.thoughtChain} // 传递思维链数据
+                  attachments={tcAttachments}
+                  isSubmitting={isSubmitting}
+                />
+              );
             })}
           </Flex>
         );
@@ -454,55 +631,63 @@ const ThoughtChainPanel = memo(function ThoughtChainPanel({
         key: roundKey,
         title: `第 ${messageData.messageIndex} 轮对话`,
         description,
-        status: isStreaming || hasAnyLoading ? 'loading' : 'success',
+        status: isStreaming || hasAnyLoading ? "loading" : "success",
         collapsible: true,
         content: renderContentItems(),
       };
-    },
-  );
+    });
 
   return (
     <ConfigProvider
-      theme={{
-        token: {
-          colorBgContainer: 'var(--bg-surface-secondary)',
-          colorText: 'var(--text-primary)',
-          colorBorder: 'var(--border-light)',
-          colorTextDescription: 'var(--text-secondary)',
-        },
-        components: {
-          // ThoughtChain 是 @ant-design/x 的组件，这里通过 any 绕过 antd 类型检查
-          ...( {
-          ThoughtChain: {
-            titleColor: 'var(--text-primary)',
-            descriptionColor: 'var(--text-secondary)',
-            itemBg: 'transparent',
-            itemHoverBg: 'var(--surface-hover)',
-              // 状态颜色配置
-              successColor: '#10b981', // 绿色
-              errorColor: '#ef4444', // 红色
-              loadingColor: 'var(--text-secondary)', // 加载中颜色
+      theme={
+        {
+          token: {
+            colorBgContainer: "var(--bg-surface-secondary)",
+            colorText: "var(--text-primary)",
+            colorBorder: "var(--border-light)",
+            colorTextDescription: "var(--text-secondary)",
           },
-          } as any),
-        },
-      } as any}
+          components: {
+            // ThoughtChain 是 @ant-design/x 的组件，这里通过 any 绕过 antd 类型检查
+            ...({
+              ThoughtChain: {
+                titleColor: "var(--text-primary)",
+                descriptionColor: "var(--text-secondary)",
+                itemBg: "transparent",
+                itemHoverBg: "var(--surface-hover)",
+                // 状态颜色配置
+                successColor: "#10b981", // 绿色
+                errorColor: "#ef4444", // 红色
+                loadingColor: "var(--text-secondary)", // 加载中颜色
+              },
+            } as any),
+          },
+        } as any
+      }
     >
       <div className="flex h-full flex-col overflow-hidden">
         {/* 标题 */}
         <div className="flex flex-shrink-0 items-center justify-between border-b border-border-light bg-background px-4 py-3">
-          <div className="text-base font-semibold text-text-primary">思维链</div>
-          <div className="text-xs text-text-secondary">共 {toolCallsByMessage.length} 轮</div>
+          <div className="text-base font-semibold text-text-primary">
+            思维链
+          </div>
+          <div className="text-xs text-text-secondary">
+            共 {toolCallsByMessage.length} 轮
+          </div>
         </div>
 
         {/* 思维链内容 */}
-        <div 
+        <div
           className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-2 thought-chain-container text-sm"
-          style={{ 
-            // 思维链整体基准文字颜色用三级文字色，更浅一些
-            color: 'var(--text-tertiary)',
-          } as React.CSSProperties}
+          style={
+            {
+              color: "var(--text-tertiary)",
+            } as React.CSSProperties
+          }
         >
-          <style dangerouslySetInnerHTML={{ __html: `
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `
             /* 基础文字颜色：使用次级文字色，降低对比度 */
             .thought-chain-container,
             .thought-chain-container *,
@@ -604,24 +789,80 @@ const ThoughtChainPanel = memo(function ThoughtChainPanel({
               fill: #10b981 !important;
               color: #10b981 !important;
             }
-            /* TwoTone 图标颜色支持 */
-            .thought-chain-container .anticon-check-circle-two-tone svg path[fill*="#"],
-            .thought-chain-container .anticon-check-circle-two-tone svg path[fill*="rgb"] {
-              fill: #10b981 !important;
+            
+            /* CodeHighlighter 样式修正 */
+            .thought-chain-container .ant-code-highlighter {
+               background: rgba(30, 30, 30, 0.5) !important;
+               border-radius: 6px;
             }
-            .thought-chain-container .anticon-close-circle-two-tone svg path[fill*="#"],
-            .thought-chain-container .anticon-close-circle-two-tone svg path[fill*="rgb"] {
-              fill: #ef4444 !important;
+            
+            /* 强制覆盖代码块颜色 */
+            .thought-chain-container pre, 
+            .thought-chain-container code {
+              background: transparent !important;
+              font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+              white-space: pre-wrap !important;
+              word-wrap: break-word !important;
+              overflow-wrap: break-word !important;
+              max-width: 100% !important;
             }
-          `}} />
-          <ThoughtChain items={chainItems} expandedKeys={expandedKeys} onExpand={setExpandedKeys} />
+            
+            /* 针对 ant-code-highlighter 内部所有的元素强制换行 */
+            .thought-chain-container .ant-code-highlighter *,
+            .thought-chain-container .ant-code-highlighter span,
+            .thought-chain-container .ant-code-highlighter div {
+               white-space: pre-wrap !important;
+               word-break: break-all !important;
+               overflow-wrap: break-word !important;
+            }
+
+            /* 针对 custom-code-highlighter-wrapper 内部所有的元素强制换行 - 终极方案 */
+            .custom-code-highlighter-wrapper pre,
+            .custom-code-highlighter-wrapper code,
+            .custom-code-highlighter-wrapper span,
+            .custom-code-highlighter-wrapper div {
+               white-space: pre-wrap !important;
+               word-break: break-all !important;
+               overflow-wrap: anywhere !important; /*比 break-word 更强*/
+               max-width: 100% !important;
+               box-sizing: border-box !important;
+            }
+            
+            /* 如果 CodeHighlighter 使用了 table 布局 (针对行号) */
+            .custom-code-highlighter-wrapper table {
+                table-layout: fixed !important;
+                width: 100% !important;
+            }
+            .custom-code-highlighter-wrapper td {
+                white-space: pre-wrap !important;
+                word-break: break-all !important;
+                overflow-wrap: anywhere !important;
+            }
+
+            /* Markdown 内容强制换行 */
+            .thought-chain-container .markdown-content-wrapper,
+            .thought-chain-container .markdown-content-wrapper p,
+            .thought-chain-container .markdown-content-wrapper li,
+            .thought-chain-container .markdown-content-wrapper span {
+              white-space: pre-wrap !important;
+              word-wrap: break-word !important;
+              overflow-wrap: break-word !important;
+              max-width: 100% !important;
+            }
+           `,
+            }}
+          />
+          <ThoughtChain
+            items={chainItems}
+            expandedKeys={expandedKeys}
+            onExpand={setExpandedKeys}
+          />
         </div>
       </div>
     </ConfigProvider>
   );
 });
 
-ThoughtChainPanel.displayName = 'ThoughtChainPanel';
+ThoughtChainPanel.displayName = "ThoughtChainPanel";
 
 export default ThoughtChainPanel;
-

@@ -49,11 +49,15 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
   return async (params) => {
     const { req, file, file_id, ...restParams } = params;
 
+    // 修复文件名编码问题（multer 可能将 UTF-8 文件名错误地按 Latin1 解码）
+    const { fixFilenameEncoding } = require('~/server/utils/files');
+    const fixedFilename = fixFilenameEncoding(file.originalname);
+
     // Create a modified file object with sanitized original name
     // This ensures consistent filename handling across all storage strategies
     const sanitizedFile = {
       ...file,
-      originalname: sanitizeFilename(file.originalname),
+      originalname: sanitizeFilename(fixedFilename),
     };
 
     return uploadFunction({ req, file: sanitizedFile, file_id, ...restParams });
@@ -520,13 +524,19 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     throw new Error('Image uploads are not supported for file search tool resources');
   }
 
-  if (!messageAttachment && !agent_id) {
+  // 允许知识库文件上传（file_search）时没有 agent_id
+  // 知识库文件是用户级别的，不需要关联到特定的 agent
+  if (!messageAttachment && !agent_id && tool_resource !== EToolResources.file_search) {
     throw new Error('No agent ID provided for agent file upload');
   }
 
   const isImage = file.mimetype.startsWith('image');
   let fileInfoMetadata;
-  const entity_id = messageAttachment === true ? undefined : agent_id;
+  // 知识库文件（file_search）不需要 entity_id，因为它们是用户级别的
+  // messageAttachment 也不需要 entity_id
+  const entity_id = messageAttachment === true || tool_resource === EToolResources.file_search 
+    ? undefined 
+    : agent_id;
   const basePath = mime.getType(file.originalname)?.startsWith('image') ? 'images' : 'uploads';
   if (tool_resource === EToolResources.execute_code) {
     const isCodeEnabled = await checkCapability(req, AgentCapabilities.execute_code);
@@ -576,7 +586,8 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
         context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
       });
 
-      if (!messageAttachment && tool_resource) {
+      // 知识库文件（file_search）不需要关联到 agent
+      if (!messageAttachment && tool_resource && tool_resource !== EToolResources.file_search && agent_id) {
         await addAgentResourceFile({
           req,
           file_id,
@@ -686,14 +697,25 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
   let { bytes, filename, filepath: _filepath, height, width } = storageResult;
   // For RAG files, use embedding result; for others, use storage result
   let embedded = storageResult.embedded;
+  // 修复文件名编码问题（multer 可能将 UTF-8 文件名错误地按 Latin1 解码）
+  const { fixFilenameEncoding } = require('~/server/utils/files');
+  const originalFilename = fixFilenameEncoding(file.originalname);
+  
   if (tool_resource === EToolResources.file_search) {
     embedded = embeddingResult?.embedded;
-    filename = embeddingResult?.filename || filename;
+    // 优先使用 embeddingResult 返回的文件名（已经修复），否则使用修复后的原始文件名
+    if (embeddingResult?.filename) {
+      filename = embeddingResult.filename;
+    } else {
+      filename = originalFilename || filename;
+    }
   }
 
   let filepath = _filepath;
 
-  if (!messageAttachment && tool_resource) {
+  // 知识库文件（file_search）不需要关联到 agent，因为它们是用户级别的
+  // 只有非知识库文件且不是消息附件时才需要关联到 agent
+  if (!messageAttachment && tool_resource && tool_resource !== EToolResources.file_search && agent_id) {
     await addAgentResourceFile({
       req,
       file_id,
@@ -718,7 +740,11 @@ const processAgentFileUpload = async ({ req, res, metadata }) => {
     temp_file_id,
     bytes,
     filepath,
-    filename: filename ?? sanitizeFilename(file.originalname),
+    // 对于知识库文件，使用修复后的原始文件名（保留中文字符）；其他文件使用 sanitized 文件名
+    // 确保文件名在所有情况下都经过编码修复
+    filename: tool_resource === EToolResources.file_search 
+      ? (filename || originalFilename)  // originalFilename 已经在上面通过 fixFilenameEncoding 修复
+      : (filename ?? sanitizeFilename(originalFilename)),  // 也使用修复后的文件名进行 sanitize
     context: messageAttachment ? FileContext.message_attachment : FileContext.agents,
     model: messageAttachment ? undefined : req.body.model,
     metadata: fileInfoMetadata,

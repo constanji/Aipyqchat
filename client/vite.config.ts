@@ -261,6 +261,8 @@ export default defineConfig(({ command }) => ({
       '@aipyq/data-provider/react-query': path.resolve(__dirname, '../packages/data-provider/dist/react-query/index.es.js'),
       '@aipyq/data-provider': path.resolve(__dirname, '../packages/data-provider/dist/index.es.js'),
     },
+    // 确保 Vite 能解析 workspace 中提升到根目录的依赖
+    dedupe: ['@react-spring/web', 'react', 'react-dom'],
   },
 }));
 

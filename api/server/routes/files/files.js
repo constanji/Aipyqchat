@@ -1,4 +1,5 @@
 const fs = require('fs').promises;
+const path = require('path');
 const express = require('express');
 const { EnvVar } = require('@aipyq/agents');
 const { logger } = require('@aipyq/data-schemas');
@@ -27,7 +28,7 @@ const { loadAuthValues } = require('~/server/services/Tools/credentials');
 const { refreshS3FileUrls } = require('~/server/services/Files/S3/crud');
 const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { getFiles, batchUpdateFiles } = require('~/models/File');
-const { cleanFileName } = require('~/server/utils/files');
+const { cleanFileName, fixFilenameEncoding } = require('~/server/utils/files');
 const { getAssistant } = require('~/models/Assistant');
 const { getAgent } = require('~/models/Agent');
 const { getLogStores } = require('~/cache');
@@ -299,6 +300,170 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
   }
 });
 
+/**
+ * Get file content (for text files only)
+ * @route GET /files/content/:userId/:file_id
+ */
+router.get('/content/:userId/:file_id', fileAccess, async (req, res) => {
+  try {
+    const { userId, file_id } = req.params;
+    logger.debug(`File content requested by user ${userId}: ${file_id}`);
+
+    // Access already validated by fileAccess middleware
+    const file = req.fileAccess.file;
+
+    // 支持的文件类型：文本文件、PDF、Word
+    const textMimeTypes = ['text/plain', 'text/markdown', 'text/html', 'application/json'];
+    const textExtensions = ['.txt', '.md', '.html', '.json', '.js', '.ts', '.jsx', '.tsx', '.css', '.xml'];
+    const pdfExtensions = ['.pdf'];
+    const wordExtensions = ['.doc', '.docx'];
+    const fileExt = require('path').extname(file.filename).toLowerCase();
+    const isTextFile = textMimeTypes.includes(file.type) || textExtensions.includes(fileExt);
+    const isPDF = file.type === 'application/pdf' || pdfExtensions.includes(fileExt);
+    const isWord = file.type === 'application/msword' || 
+                   file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+                   wordExtensions.includes(fileExt);
+    
+    if (!isTextFile && !isPDF && !isWord) {
+      return res.status(400).json({ 
+        error: 'Unsupported file type',
+        message: 'Only text files, PDF, and Word documents can be viewed as content' 
+      });
+    }
+
+    // 对于本地文件，直接读取
+    if (file.source === FileSources.local && file.filepath) {
+      try {
+        // 将相对路径转换为绝对路径
+        let absoluteFilePath = file.filepath;
+        if (file.filepath.startsWith('/uploads/')) {
+          const appConfig = req.config;
+          const basePath = file.filepath.split('/uploads/')[1];
+          if (basePath) {
+            absoluteFilePath = path.join(appConfig.paths.uploads, basePath);
+          }
+        } else if (file.filepath.startsWith('/images/')) {
+          const appConfig = req.config;
+          const basePath = file.filepath.split('/images/')[1];
+          if (basePath) {
+            absoluteFilePath = path.join(appConfig.paths.imageOutput, basePath);
+          }
+        }
+        
+        let content = '';
+        
+        // PDF 文件：解析并显示文本内容
+        if (isPDF) {
+          const PDFParseService = require('~/server/services/RAG/PDFParseService');
+          const pdfParseService = new PDFParseService();
+          await pdfParseService.initialize();
+          const chunks = await pdfParseService.parsePDF(absoluteFilePath, {
+            chunkSize: 10000, // 使用较大的 chunk size 以获取完整内容
+            chunkOverlap: 0,
+          });
+          // 合并所有 chunks 的文本
+          content = chunks.map(chunk => chunk.text || chunk).join('\n\n');
+        }
+        // Word 文件：解析并显示文本内容
+        else if (isWord) {
+          const WordParseService = require('~/server/services/RAG/WordParseService');
+          const wordParseService = new WordParseService();
+          await wordParseService.initialize();
+          const chunks = await wordParseService.parseWordDocument(absoluteFilePath, {
+            chunkSize: 10000, // 使用较大的 chunk size 以获取完整内容
+            chunkOverlap: 0,
+          });
+          // 合并所有 chunks 的文本
+          content = chunks.map(chunk => chunk.text || chunk).join('\n\n');
+        }
+        // 文本文件：直接读取
+        else {
+          const { readFileAsString } = require('@aipyq/api');
+          const result = await readFileAsString(absoluteFilePath, {
+            fileSize: file.bytes,
+          });
+          content = result.content;
+        }
+        
+        // 修复文件名编码问题
+        const fixedFilename = fixFilenameEncoding(file.filename);
+        return res.status(200).json({
+          content,
+          filename: fixedFilename,
+          type: file.type,
+          size: file.bytes,
+        });
+      } catch (readError) {
+        logger.error('[CONTENT ROUTE] Error reading file:', readError);
+        return res.status(500).json({ 
+          error: 'Failed to read file',
+          message: readError.message 
+        });
+      }
+    }
+
+    // 对于其他存储源，尝试获取流并读取
+    const { getDownloadStream } = getStrategyFunctions(file.source);
+    if (!getDownloadStream) {
+      return res.status(501).json({ 
+        error: 'Not Implemented',
+        message: `Content viewing not supported for storage source: ${file.source}` 
+      });
+    }
+
+    if (checkOpenAIStorage(file.source)) {
+      req.body = { model: file.model };
+      const endpointMap = {
+        [FileSources.openai]: EModelEndpoint.assistants,
+        [FileSources.azure]: EModelEndpoint.azureAssistants,
+      };
+      const { openai } = await getOpenAIClient({
+        req,
+        res,
+        overrideEndpoint: endpointMap[file.source],
+      });
+      const passThrough = await getDownloadStream(file_id, openai);
+      const stream =
+        passThrough.body && typeof passThrough.body.getReader === 'function'
+          ? Readable.fromWeb(passThrough.body)
+          : passThrough.body;
+      
+      const chunks = [];
+      for await (const chunk of stream) {
+        chunks.push(chunk);
+      }
+      const content = Buffer.concat(chunks).toString('utf8');
+      
+      return res.status(200).json({
+        content,
+        filename: file.filename,
+        type: file.type,
+        size: file.bytes,
+      });
+    } else {
+      const fileStream = await getDownloadStream(req, file.filepath);
+      const chunks = [];
+      for await (const chunk of fileStream) {
+        chunks.push(chunk);
+      }
+      const content = Buffer.concat(chunks).toString('utf8');
+      
+      return res.status(200).json({
+        content,
+        filename: file.filename,
+        type: file.type,
+        size: file.bytes,
+      });
+    }
+  } catch (error) {
+    logger.error('[CONTENT ROUTE] Error getting file content:', error);
+    res.status(500).json({ 
+      error: 'Failed to get file content',
+      message: error.message 
+    });
+  }
+});
+
 router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
   try {
     const { userId, file_id } = req.params;
@@ -321,7 +486,9 @@ router.get('/download/:userId/:file_id', fileAccess, async (req, res) => {
     }
 
     const setHeaders = () => {
-      const cleanedFilename = cleanFileName(file.filename);
+      // 修复文件名编码问题
+      const fixedFilename = fixFilenameEncoding(file.filename);
+      const cleanedFilename = cleanFileName(fixedFilename);
       res.setHeader('Content-Disposition', `attachment; filename="${cleanedFilename}"`);
       res.setHeader('Content-Type', 'application/octet-stream');
       res.setHeader('X-File-Metadata', JSON.stringify(file));
@@ -371,6 +538,30 @@ router.post('/', async (req, res) => {
   let cleanup = true;
 
   try {
+    // 检查文件是否存在
+    if (!req.file) {
+      throw new Error('No file uploaded');
+    }
+
+    // 确保 file_id 已设置（multer 的 filename 回调应该已经设置）
+    // 如果没有设置，可能是 multer 中间件没有正确执行
+    if (!req.file_id) {
+      // 如果 file_id 未设置，尝试从 metadata 中获取，或者生成一个新的
+      if (metadata.file_id) {
+        req.file_id = metadata.file_id;
+      } else {
+        // 生成一个新的 file_id
+        const crypto = require('crypto');
+        req.file_id = crypto.randomUUID();
+        logger.warn('[/files] file_id was not set by multer, generated new one:', req.file_id);
+      }
+    }
+
+    // 将 req.file_id 也设置到 req.body.file_id，因为 filterFile 检查的是 req.body.file_id
+    if (!req.body.file_id) {
+      req.body.file_id = req.file_id;
+    }
+
     filterFile({ req });
 
     metadata.temp_file_id = metadata.file_id;
@@ -397,15 +588,17 @@ router.post('/', async (req, res) => {
       message = error.message;
     }
 
-    try {
-      await fs.unlink(req.file.path);
-      cleanup = false;
-    } catch (error) {
-      logger.error('[/files] Error deleting file:', error);
+    if (req.file && req.file.path) {
+      try {
+        await fs.unlink(req.file.path);
+        cleanup = false;
+      } catch (error) {
+        logger.error('[/files] Error deleting file:', error);
+      }
     }
     res.status(500).json({ message });
   } finally {
-    if (cleanup) {
+    if (cleanup && req.file && req.file.path) {
       try {
         await fs.unlink(req.file.path);
       } catch (error) {

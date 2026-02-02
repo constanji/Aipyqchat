@@ -157,7 +157,7 @@ export default function Footer({ className }: { className?: string }) {
     }
   }, [config?.analyticsGtmId]);
 
-  const footerElements = [mainContentRender, privacyPolicyRender, termsOfServiceRender].filter(
+  const footerElements = [/* mainContentRender, privacyPolicyRender, */ termsOfServiceRender].filter(
     Boolean,
   );
 

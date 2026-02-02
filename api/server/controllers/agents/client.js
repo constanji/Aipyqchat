@@ -420,6 +420,71 @@ class AgentClient extends BaseClient {
       }
     }
 
+    // RAG 检索集成：将用户问题向量化并检索相关知识
+    logger.info('[AgentClient] RAG检索集成 - 开始');
+    try {
+      const { ConversationRAGService } = require('~/server/services/RAG');
+      const conversationRAGService = new ConversationRAGService();
+      
+      // 获取用户最新的消息作为查询（需要找到最后一条 user 消息）
+      const latestUserMessage = orderedMessages
+        .filter(m => m.isCreatedByUser === true || m.role === 'user' || m.sender === 'User')
+        .pop();
+      const userQuery = latestUserMessage?.text || latestUserMessage?.content || '';
+      
+      logger.info(`[AgentClient] RAG检索集成 - 用户问题: "${userQuery.substring(0, 100)}"`);
+      logger.info(`[AgentClient] RAG检索集成 - 消息数量: ${orderedMessages.length}, 找到用户消息: ${!!latestUserMessage}`);
+      
+      // 检查是否需要进行 RAG 检索
+      const shouldRetrieve = userQuery && conversationRAGService.shouldRetrieve(userQuery);
+      logger.info(`[AgentClient] RAG检索集成 - shouldRetrieve结果: ${shouldRetrieve}`);
+      
+      if (shouldRetrieve) {
+        const userId = this.options.req?.user?.id;
+        const agentId = this.options.agent?.id;
+        
+        logger.info(`[AgentClient] RAG检索集成 - userId: ${userId}, agentId: ${agentId}`);
+        
+        // 获取智能体的 RAG 配置
+        const ragConfig = conversationRAGService.getAgentRAGConfig(this.options.agent);
+        logger.info(`[AgentClient] RAG检索集成 - ragConfig: ${JSON.stringify(ragConfig)}`);
+        
+        if (ragConfig.enabled) {
+          logger.info(
+            `[AgentClient] 开始对话 RAG 检索: "${userQuery.substring(0, 50)}..."`,
+          );
+          
+          const ragResult = await conversationRAGService.retrieveForConversation({
+            query: userQuery,
+            userId,
+            agentId,
+            fileIds: ragConfig.fileIds,
+            config: ragConfig,
+          });
+          
+          logger.info(`[AgentClient] RAG检索集成, context长度: ${ragResult.context?.length || 0}`);
+          logger.info(`检索结果:`);
+          logger.info(ragResult.results);
+
+          // 将检索到的上下文注入系统消息
+          if (ragResult.context && ragResult.context.length > 0) {
+            systemContent = [systemContent, ragResult.context].filter(Boolean).join('\n\n');
+            logger.info(`[AgentClient] RAG 检索完成，注入了 ${ragResult.results?.length || 0} 条相关知识`);
+          } else {
+            logger.info('[AgentClient] RAG检索集成 - 未找到相关知识或context为空');
+          }
+        } else {
+          logger.info('[AgentClient] RAG检索集成 - ragConfig.enabled为false，跳过检索');
+        }
+      } else {
+        logger.info('[AgentClient] RAG检索集成 - shouldRetrieve为false，跳过检索');
+      }
+    } catch (ragError) {
+      // RAG 检索失败不应阻止对话继续
+      logger.warn('[AgentClient] RAG 检索失败，继续对话:', ragError.message);
+      logger.error('[AgentClient] RAG 检索错误详情:', ragError.stack);
+    }
+
     if (systemContent) {
       this.options.agent.instructions = systemContent;
     }

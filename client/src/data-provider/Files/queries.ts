@@ -1,6 +1,6 @@
 import { useRecoilValue } from 'recoil';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, DynamicQueryKeys, dataService } from '@aipyq/data-provider';
+import { QueryKeys, DynamicQueryKeys, dataService, request, apiBaseUrl } from '@aipyq/data-provider';
 import type { QueryObserverResult, UseQueryOptions } from '@tanstack/react-query';
 import type t from '@aipyq/data-provider';
 import { isEphemeralAgent } from '~/common';
@@ -101,6 +101,25 @@ export const useCodeOutputDownload = (url = ''): QueryObserverResult<string> => 
     },
     {
       enabled: false,
+      retry: false,
+    },
+  );
+};
+
+export const useFileContent = (userId?: string, file_id?: string): QueryObserverResult<{ content: string; filename: string; type: string; size: number }> => {
+  return useQuery(
+    ['fileContent', userId, file_id],
+    async () => {
+      if (!userId || !file_id) {
+        throw new Error('User ID and file ID are required');
+      }
+      // 直接构建 URL 调用 API，避免依赖可能未导出的函数
+      const baseUrl = apiBaseUrl();
+      const url = `${baseUrl}/api/files/content/${userId}/${file_id}`;
+      return request.get(url);
+    },
+    {
+      enabled: !!userId && !!file_id, // 当 userId 和 file_id 都存在时启用查询
       retry: false,
     },
   );
