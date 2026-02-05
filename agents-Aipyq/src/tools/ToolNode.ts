@@ -36,6 +36,8 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
   handleToolErrors = true;
   trace = false;
   toolCallStepIds?: Map<string, string>;
+  /** Map of tool call index -> {name, id} for recovering missing info (dashscope issue) */
+  toolCallInfoByIndex?: Map<number, { name: string; id: string }>;
   errorHandler?: t.ToolNodeConstructorParams['errorHandler'];
   private toolUsageCount: Map<string, number>;
   /** Tool registry for filtering (lazy computation of programmatic maps) */
@@ -50,6 +52,7 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
     tags,
     errorHandler,
     toolCallStepIds,
+    toolCallInfoByIndex,
     handleToolErrors,
     loadRuntimeTools,
     toolRegistry,
@@ -57,6 +60,7 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
     super({ name, tags, func: (input, config) => this.run(input, config) });
     this.toolMap = toolMap ?? new Map(tools.map((tool) => [tool.name, tool]));
     this.toolCallStepIds = toolCallStepIds;
+    this.toolCallInfoByIndex = toolCallInfoByIndex;
     this.handleToolErrors = handleToolErrors ?? this.handleToolErrors;
     this.loadRuntimeTools = loadRuntimeTools;
     this.errorHandler = errorHandler;
@@ -243,9 +247,60 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
         throw new Error('ToolNode only accepts AIMessages as input.');
       }
 
+      // Get tool calls from standard location or convert from additional_kwargs (dashscope issue)
+      let toolCallsToProcess = aiMessage.tool_calls ?? [];
+      
+      // If no standard tool_calls, try to convert from additional_kwargs.tool_calls
+      if (toolCallsToProcess.length === 0) {
+        const additionalKwargsToolCalls = aiMessage.additional_kwargs?.tool_calls as Array<{
+          id?: string;
+          type?: string;
+          function?: { name?: string; arguments?: string };
+        }> | undefined;
+        
+        if (additionalKwargsToolCalls?.length) {
+          // Convert additional_kwargs.tool_calls to standard format (for dashscope/OpenAI compatible APIs)
+          toolCallsToProcess = additionalKwargsToolCalls
+            .map((tc, index) => {
+              // Try to recover name/id from saved info if missing
+              const savedInfo = this.toolCallInfoByIndex?.get(index);
+              
+              // Use saved info to recover missing name/id
+              const name = (tc.function?.name && tc.function.name.length > 0) 
+                ? tc.function.name 
+                : savedInfo?.name || '';
+              let id = (tc.id && tc.id.length > 0) 
+                ? tc.id 
+                : savedInfo?.id || '';
+              
+              let args: Record<string, unknown> = {};
+              try {
+                if (tc.function?.arguments) {
+                  args = JSON.parse(tc.function.arguments);
+                }
+              } catch {
+                // Failed to parse arguments, use empty object
+              }
+              
+              // Generate ID if still missing
+              if (!id) {
+                id = `generated_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+              }
+              
+              return {
+                id,
+                name,
+                args,
+                type: 'tool_call' as const,
+              };
+            })
+            .filter(tc => tc.name && tc.name.length > 0); // Only include tool calls with valid names
+        }
+      }
+
       if (this.loadRuntimeTools) {
         const { tools, toolMap } = this.loadRuntimeTools(
-          aiMessage.tool_calls ?? []
+          toolCallsToProcess
         );
         this.toolMap =
           toolMap ?? new Map(tools.map((tool) => [tool.name, tool]));
@@ -253,7 +308,7 @@ export class ToolNode<T = any> extends RunnableCallable<T, T> {
       }
 
       outputs = await Promise.all(
-        aiMessage.tool_calls
+        toolCallsToProcess
           ?.filter((call) => {
             /**
              * Filter out:
@@ -353,10 +408,34 @@ export function toolsCondition<T extends string>(
     ? state[state.length - 1]
     : state.messages[state.messages.length - 1];
 
+  // Check for tool_calls in both standard location and additional_kwargs (for dashscope/OpenAI compatible APIs)
+  const standardToolCalls = message.tool_calls?.length ?? 0;
+  const additionalKwargsToolCalls = message.additional_kwargs?.tool_calls as Array<{
+    id?: string;
+    type?: string;
+    function?: { name?: string; arguments?: string };
+  }> | undefined;
+  const additionalToolCalls = additionalKwargsToolCalls?.length ?? 0;
+  
+  // For dashscope: Check if additional_kwargs.tool_calls has valid tool calls
+  // that weren't properly parsed into message.tool_calls
+  let hasUnparsedToolCalls = false;
+  if (additionalToolCalls > 0 && standardToolCalls === 0) {
+    // Check if any tool call in additional_kwargs has valid function data
+    hasUnparsedToolCalls = additionalKwargsToolCalls?.some(tc => {
+      const funcName = tc?.function?.name;
+      const funcArgs = tc?.function?.arguments;
+      // Has valid function call data (name or arguments)
+      return (funcName && funcName.length > 0) || (funcArgs && funcArgs.length > 0);
+    }) ?? false;
+  }
+  
+  const hasToolCalls = ('tool_calls' in message && (message.tool_calls?.length ?? 0) > 0) || hasUnparsedToolCalls;
+  const toolCallsInvoked = areToolCallsInvoked(message, invokedToolIds);
+
   if (
-    'tool_calls' in message &&
-    (message.tool_calls?.length ?? 0) > 0 &&
-    !areToolCallsInvoked(message, invokedToolIds)
+    hasToolCalls &&
+    !toolCallsInvoked
   ) {
     return toolNode;
   } else {

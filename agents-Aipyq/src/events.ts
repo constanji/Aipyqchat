@@ -52,24 +52,89 @@ export class ModelEndHandler implements t.EventHandler {
       return handleToolCalls(data?.output?.tool_calls, metadata, graph);
     }
 
-    console.log(`====== ${event.toUpperCase()} ======`);
-    console.dir(
-      {
-        usage,
-      },
-      { depth: null }
-    );
+    // 检查additional_kwargs中的工具调用（dashscope/OpenAI 兼容 API）
+    const additionalKwargsToolCalls = data?.output?.additional_kwargs.tool_calls as Array<{
+      id?: string;
+      type?: string;
+      function?: { name?: string; arguments?: string };
+    }> | undefined;
 
     const agentContext = graph.getAgentContext(metadata);
 
-    if (
-      agentContext.provider !== Providers.GOOGLE &&
-      agentContext.provider !== Providers.BEDROCK
-    ) {
-      return;
+    // 从标准位置获取工具调用，或从additional_kwargs转换
+    let toolCalls = data?.output?.tool_calls;
+
+    // 如果没有标准tool_calls但有 additional_kwargs.tool_calls，就转换它们
+    // 这处理了 DashScope/OpenAI 兼容的 API，tool_calls 可能additional_kwargs
+    if ((!toolCalls || toolCalls.length === 0) && additionalKwargsToolCalls?.length) {
+      toolCalls = additionalKwargsToolCalls
+        .filter(tc => {
+          // 过滤掉无效的工具调用（无名称且无参数）
+          const hasName = tc.function?.name && tc.function.name.length > 0;
+          const hasArgs = tc.function?.arguments && tc.function.arguments.length > 0;
+          return hasName || hasArgs;
+        })
+        .map((tc, index) => {
+          // 如果丢失了，试着从保存的信息中恢复姓名/ID。
+          const savedInfo = graph.toolCallInfoByIndex.get(index);
+          const name = (tc.function?.name && tc.function.name.length > 0)
+            ? tc.function.name
+            : savedInfo?.name || '';
+          const id = (tc.id && tc.id.length > 0)
+            ? tc.id
+            : savedInfo?.id || `generated_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+          let args = {};
+          try {
+            args = tc.function?.arguments ? JSON.parse(tc.function.arguments) : {};
+          } catch {
+            // 未能解析参数，使用空对象
+          }
+
+          return {
+            id,
+            name,
+            args,
+            type: 'tool_call' as const,
+          };
+        });
     }
 
-    await handleToolCalls(data?.output?.tool_calls, metadata, graph);
+    // 检查是否有未处理的工具调用
+    // 这适用于stream处理tool_calls不正常的情况（例如dashscope）。
+    let hasUnprocessedToolCalls = false;
+    if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+      hasUnprocessedToolCalls = toolCalls.some(
+        (tc) => {
+          // 情况1：已识别但尚未处理（toolCallStepIds 中未处理）
+          if (tc.id && graph.toolCallStepIds.has && !graph.toolCallStepIds.has(tc.id)) {
+            return true;
+          }
+          // 情况二：有名字但没有id可能在stream时被跳过了
+          if (tc.name && (!tc.id || tc.id === '')) {
+            return true;
+          }
+          // 情况三：工具调用已注册但未被调用（dashscope问题）
+          if (tc.id && graph.toolCallStepIds.has(tc.id) && graph.invokedToolIds) {
+            if (!graph.invokedToolIds.has(tc.id)) {
+              return true;
+            }
+          }
+          return false;
+        },
+      );
+    }
+
+    // 处理 Google/Bedrock 的工具调用，或者如果有未处理的工具调用
+    // 这处理了 dashscope（使用 OpenAI 兼容 API）工具调用问题
+    const shouldProcessToolCalls =
+      agentContext.provider === Providers.GOOGLE ||
+      agentContext.provider === Providers.BEDROCK ||
+      hasUnprocessedToolCalls;
+
+    if (shouldProcessToolCalls) {
+      await handleToolCalls(toolCalls, metadata, graph);
+    }
   }
 }
 

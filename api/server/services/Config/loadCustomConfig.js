@@ -13,7 +13,7 @@ const {
 } = require('@aipyq/data-provider');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..', '..');
-const defaultConfigPath = path.resolve(projectRoot, 'Chizhou.yaml');
+const defaultConfigPath = path.resolve(projectRoot, 'Aipyq.yaml');
 
 let i = 0;
 

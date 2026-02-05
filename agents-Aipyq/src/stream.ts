@@ -169,19 +169,29 @@ export class ChatModelStreamHandler implements t.EventHandler {
     }
     this.handleReasoning(chunk, agentContext);
     let hasToolCalls = false;
-    if (
-      chunk.tool_calls &&
-      chunk.tool_calls.length > 0 &&
-      chunk.tool_calls.every(
+
+    if (chunk.tool_calls && chunk.tool_calls.length > 0) {
+      // 过滤有效tool_calls（必须有非空的 id 和名称）
+      const validToolCalls = chunk.tool_calls.filter(
         (tc) =>
           tc.id != null &&
           tc.id !== '' &&
           (tc as Partial<ToolCall>).name != null &&
           tc.name !== ''
-      )
-    ) {
-      hasToolCalls = true;
-      await handleToolCalls(chunk.tool_calls, metadata, graph);
+      );
+
+      // 记录某些tool_calls无效时（帮助诊断供应商问题，比如dashscope）
+      if (validToolCalls.length !== chunk.tool_calls.length) {
+        const provider = agentContext.provider;
+        const invalidCount = chunk.tool_calls.length - validToolCalls.length;
+        console.log(`[Stream] Provider: ${provider}, filtered out ${invalidCount} invalid tool_calls (missing id or name), processing ${validToolCalls.length} valid ones`);
+      }
+
+      // 只处理有效tool_calls
+      if (validToolCalls.length > 0) {
+        hasToolCalls = true;
+        await handleToolCalls(validToolCalls, metadata, graph);
+      }
     }
 
     const hasToolCallChunks =
@@ -520,17 +530,38 @@ export function createContentAggregator(): t.ContentAggregatorResult {
       // Consolidate with any previously accumulated args from chunks
       const hasValidName = incomingName != null && incomingName !== '';
 
-      // Only process if incoming has a valid name (complete tool call)
-      // or if we're doing a final update with complete data
-      if (!hasValidName && !finalUpdate) {
-        return;
-      }
-
       const existingContent = contentParts[index] as
         | (Omit<t.ToolCallContent, 'tool_call'> & {
             tool_call?: t.ToolCallPart;
           })
         | undefined;
+
+      // 允许处理，条件如下：
+      // 1. 拥有有效的名称（完整的工具调用或第一块）
+      // 2. 是最终更新
+      // 3. 有现有内容可附加 args（后续块用于 dashscope/openai 兼容 API）
+      const hasExistingToolCall = existingContent?.tool_call != null;
+      const hasArgsToAppend = toolCallArgs != null && toolCallArgs !== '';
+
+      if (!hasValidName && !finalUpdate && !hasExistingToolCall && !hasArgsToAppend) {
+        return;
+      }
+
+      // 如果我们有 args，但没有现有的工具调用和名称，我们需要初始化
+      // 这处理了块到来顺序不一致的边缘情况
+      if (!hasExistingToolCall && !hasValidName && hasArgsToAppend) {
+        // 暂时存储 args，等待带有名称/ID 的块
+        contentParts[index] = {
+          type: ContentTypes.TOOL_CALL,
+          tool_call: {
+            id: incomingId ?? '',
+            name: '',
+            args: toolCallArgs,
+            type: ToolCallTypes.TOOL_CALL,
+          },
+        };
+        return;
+      }
 
       /** When args are a valid object, they are likely already invoked */
       let args =
@@ -664,12 +695,22 @@ export function createContentAggregator(): t.ContentAggregatorResult {
         runStepDelta.delta.tool_calls.forEach((toolCallDelta) => {
           const toolCallId = toolCallIdMap.get(runStepDelta.id);
 
+          // 如果这是仅限args的区块，请保留现有内容以保留name/id。
+          // 它处理的是 DashScope/OpenAI 兼容的 API，其中 args 是分开的
+          const existingContent = contentParts[runStep.index] as
+            | (Omit<t.ToolCallContent, 'tool_call'> & {
+                tool_call?: t.ToolCallPart;
+              })
+            | undefined;
+
           const contentPart: t.MessageContentComplex = {
             type: ContentTypes.TOOL_CALL,
             tool_call: {
               args: toolCallDelta.args ?? '',
-              name: toolCallDelta.name,
-              id: toolCallId,
+              // 如果这块区块没有现有名称（dashscope问题），请保留现有名称。
+              name: toolCallDelta.name ?? existingContent?.tool_call?.name,
+              // 保留现有的ID，或从map上使用。
+              id: toolCallId ?? toolCallDelta.id ?? existingContent?.tool_call?.id,
             },
           };
 

@@ -32,6 +32,21 @@ export async function handleToolCallChunks({
   toolCallChunks: ToolCallChunk[];
   metadata?: Record<string, unknown>;
 }): Promise<void> {
+  // Save tool call info by index for recovering missing name/id later (dashscope issue)
+  // This is needed because dashscope streaming may send name/id in first chunk only
+  for (const chunk of toolCallChunks) {
+    const index = chunk.index ?? 0;
+    const existingInfo = graph.toolCallInfoByIndex.get(index);
+
+    // Update info if we have new name or id
+    const newName = chunk.name && chunk.name !== '' ? chunk.name : existingInfo?.name ?? '';
+    const newId = chunk.id && chunk.id !== '' ? chunk.id : existingInfo?.id ?? '';
+
+    if (newName || newId) {
+      graph.toolCallInfoByIndex.set(index, { name: newName, id: newId });
+    }
+  }
+
   let prevStepId: string;
   let prevRunStep: t.RunStep | undefined;
   try {
@@ -129,7 +144,7 @@ export const handleToolCalls = async (
   graph?: StandardGraph | MultiAgentGraph
 ): Promise<void> => {
   if (!graph || !metadata) {
-    console.warn(`Graph or metadata not found in ${event} event`);
+    console.warn(`Graph or metadata not found in in handleToolCalls`);
     return;
   }
 

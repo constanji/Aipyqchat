@@ -31,6 +31,8 @@ export type ToolNodeOptions = {
   handleToolErrors?: boolean;
   loadRuntimeTools?: ToolRefGenerator;
   toolCallStepIds?: Map<string, string>;
+  /** Map of tool call index -> {name, id} for recovering missing info (dashscope issue) */
+  toolCallInfoByIndex?: Map<number, { name: string; id: string }>;
   errorHandler?: (
     data: ToolErrorData,
     metadata?: Record<string, unknown>

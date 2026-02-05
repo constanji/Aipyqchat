@@ -131,6 +131,8 @@ export abstract class Graph<
   stepKeyIds: Map<string, string[]> = new Map<string, string[]>();
   contentIndexMap: Map<string, number> = new Map();
   toolCallStepIds: Map<string, string> = new Map();
+  /** Map of tool call index -> {name, id} for recovering missing info in streaming (dashscope issue) */
+  toolCallInfoByIndex: Map<number, { name: string; id: string }> = new Map();
   signal?: AbortSignal;
   /** Set of invoked tool call IDs from non-message run steps completed mid-run, if any */
   invokedToolIds?: Set<string>;
@@ -190,6 +192,7 @@ export class StandardGraph extends Graph<t.BaseGraphState, t.GraphNode> {
     }
     this.stepKeyIds = resetIfNotEmpty(this.stepKeyIds, new Map());
     this.toolCallStepIds = resetIfNotEmpty(this.toolCallStepIds, new Map());
+    this.toolCallInfoByIndex = resetIfNotEmpty(this.toolCallInfoByIndex, new Map());
     this.messageIdsByStepKey = resetIfNotEmpty(
       this.messageIdsByStepKey,
       new Map()
@@ -454,6 +457,7 @@ export class StandardGraph extends Graph<t.BaseGraphState, t.GraphNode> {
       tools: (currentTools as t.GenericTool[] | undefined) ?? [],
       toolMap: currentToolMap,
       toolCallStepIds: this.toolCallStepIds,
+      toolCallInfoByIndex: this.toolCallInfoByIndex,
       errorHandler: (data, metadata) =>
         StandardGraph.handleToolCallErrorStatic(this, data, metadata),
       toolRegistry: agentContext?.toolRegistry,
